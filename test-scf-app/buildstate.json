@@ -1,0 +1,209 @@
+{
+  "meta": {
+    "spec": "v1.1-technical",
+    "repo": "web_application",
+    "purpose": "Technical specification for a new project. See buildstate.md for ideation and context.",
+    "rebalanced_at": "2025-07-19"
+  },
+  "project": {
+    "name": "web_application",
+    "version": "1.0",
+    "type": "web_application",
+    "stakeholder": "web_application"
+  },
+  "user_stories": [
+    "Define stakeholder needs as ideation progresses"
+  ],
+  "success_metrics": [
+    "Define measurable outcomes during planning"
+  ],
+  "features": [
+    {
+      "id": "web_application",
+      "name": "web_application",
+      "priority": "web_application",
+      "status": "\ud83d\udd04",
+      "desc": "Define feature purpose"
+    }
+  ],
+  "stack": [
+    "web_application"
+  ],
+  "structure": {
+    "web_application": "Define file structure as project takes shape"
+  },
+  "models": {
+    "web_application": {
+      "desc": "Define model structure"
+    }
+  },
+  "api_docs": "web_application",
+  "coding_standards": {
+    "organization": "Modular components, separate logic/services, grouped folders",
+    "naming": {
+      "components": "PascalCase",
+      "functions": "camelCase",
+      "constants": "UPPER_SNAKE_CASE",
+      "css": "kebab-case"
+    },
+    "errors": [
+      "Try-catch async",
+      "Detailed logging",
+      "User messages"
+    ],
+    "docs": [
+      "File headers",
+      "Function comments",
+      "Inline comments"
+    ],
+    "performance": [
+      "Optimize re-renders",
+      "Lazy loading",
+      "Debouncing"
+    ]
+  },
+  "environment": {
+    "phase": "Ideation",
+    "focus": "Define scope, stack, and architecture",
+    "api_url": "web_application",
+    "proxy": "web_application"
+  },
+  "change_log": [
+    {
+      "date": "2025-07-19",
+      "version": "v1.0",
+      "desc": "Initial SCF setup for new project",
+      "synced_with": "buildstate.md"
+    }
+  ],
+  "next_steps": [
+    "\u2705 COMPLETE: GitHub Copilot instructions generator (2025-11-10)",
+    "\u2705 COMPLETE: Change Notification System (2025-11-10)",
+    "\u2705 COMPLETE: Self-aware buildstate protocol (2025-11-10)",
+    "Update existing projects with self-aware templates (medium priority)",
+    "Test real-world multi-AI sessions on same project (medium priority)",
+    "Build VS Code extension for session state visualization (high priority - daily use)",
+    "Test Cline .clinerules support and AGENTS.md compatibility",
+    "Integrate buildstate with Claude Code Projects",
+    "Implement _scf_metadata tracking in templates (source_repo, last_sync_date, sync_version)",
+    "Implement _conversation_log tracking in templates (session history with commit links)",
+    "Add .scf/private/ directory and private-overrides.json to inheritance chain",
+    "Implement auto-commit on significant changes (--auto-commit flag)",
+    "Document public/private fork strategy comprehensively"
+  ],
+  "bugs": [],
+  "decisions": [
+    {
+      "date": "2025-11-10",
+      "impact": 8,
+      "decision": "SCF positioning strategy: Market as 'AGENTS.md Plus Intelligence'",
+      "rationale": "Analysis shows SCF provides persistent context continuity that agents.md (static) and AG2 (ephemeral) both lack",
+      "context": "Competitive analysis of agents.md and AG2.ai frameworks"
+    },
+    {
+      "date": "2025-11-10",
+      "impact": 7,
+      "decision": "Add AGENTS.md symlink for ecosystem compatibility",
+      "rationale": "20,000+ projects use agents.md standard - symlink provides compatibility without complexity",
+      "context": "Need to research what tools actually detect AGENTS.md files"
+    },
+    {
+      "date": "2025-11-10",
+      "impact": 9,
+      "decision": "Implement AGENTS.md generator and auto-symlink in SCF",
+      "rationale": "Research confirms Zed, Aider, Cursor, and many tools scan for AGENTS.md - provides immediate ecosystem compatibility",
+      "context": "Tools detected: Zed (8 filenames), Aider (--read), Cursor (.cursorrules), Gemini CLI, GitHub Copilot"
+    },
+    {
+      "date": "2025-11-10",
+      "impact": 9,
+      "decision": "Create dedicated init_scf.py and update_scf.py for precise project control",
+      "rationale": "Need targeted, one-project-at-a-time operations separate from ecosystem-wide learner. Certainty over what's being changed.",
+      "context": "User wants explicit control over which project receives updates vs automatic discovery"
+    },
+    {
+      "date": "2025-11-10",
+      "impact": 8,
+      "decision": "Add SCF productivity analytics and growth tracking",
+      "rationale": "Measure logarithmic growth in productivity, context efficiency, and innovation velocity to validate SCF impact",
+      "context": "Track: session efficiency, context reuse, cross-project learning adoption, time-to-implementation"
+    },
+    {
+      "date": "2025-11-10",
+      "impact": 10,
+      "decision": "Make session portability a core SCF tenant",
+      "rationale": "Network issues, token limits, and interruptions shouldn't kill momentum. SCF enables seamless LLM switching and session resume.",
+      "context": "Core principle: Never lose progress. SESSION_RESUME.md + buildstate = perfect continuity across any interruption or LLM"
+    },
+    {
+      "date": "2025-11-10",
+      "impact": 7,
+      "decision": "Create SCF Knowledge Base for tracking external frameworks",
+      "rationale": "Continuous learning from agents.md, AG2, Cursor, Zed, Aider. Monthly checks for updates, quarterly deep dives.",
+      "context": "KB tracks: versions, features, integration opportunities, competitive positioning. Next check: 2025-12-10"
+    },
+    {
+      "date": "2025-11-10",
+      "impact": 7,
+      "decision": "Document self-aware buildstate protocol comprehensively",
+      "rationale": "Need complete guide showing how AIs coordinate across sessions without external scripts - intelligence in files themselves",
+      "context": "Created SELF_AWARE_BUILDSTATE.md with protocol, examples, API reference, CLI reference, best practices, troubleshooting. Updated README.md with new section."
+    },
+    {
+      "date": "2025-11-10",
+      "impact": 10,
+      "decision": "Self-aware buildstate with session state tracking (IMPLEMENTED)",
+      "rationale": "Buildstate should detect when another LLM modified the project without needing external SCF scripts. Intelligence in files, not tooling.",
+      "context": "Complete: _session_state tracking, embedded AI instructions in buildstate.md READ FIRST section, check_session_state(), update_session_state(), generate_self_aware_context(), scf_load_project.py --self-aware mode. Validated with Claude\u2192Copilot cross-AI test showing automatic review trigger. Full documentation in SELF_AWARE_BUILDSTATE.md."
+    },
+    {
+      "date": "2025-11-10",
+      "impact": 8,
+      "decision": "Add \"Save Often\" and \"Public/Private Distinction\" as core tenants",
+      "rationale": "User identified critical needs: atomic commits (like homework), public repo fork with private data protection, community learnings without exposing secrets",
+      "context": "Industry pattern: Atomic Commits (Git best practice). Added conversation history tracking and SCF metadata tracking. Commit: 472cd8a"
+    },
+    {
+      "date": "2025-11-10",
+      "impact": 9,
+      "decision": "Add comprehensive User Acceptance Tests section to README",
+      "rationale": "Highlight SCF powerful functionality through real-world scenarios that demonstrate competitive advantages",
+      "context": "8 UATs covering: Cross-AI handoff, session resume, ecosystem learning, inheritance, change notifications, Copilot integration, rebalancing, private fork strategy. Commit: 0a9efe6"
+    }
+  ],
+  "roadmap": {
+    "next": [
+      "Research AGENTS.md detection mechanisms",
+      "Implement AGENTS.md generator",
+      "Add symlink automation"
+    ],
+    "future": [
+      "AG2 runtime integration",
+      "Universal compatibility layer"
+    ]
+  },
+  "tasks": {
+    "start": "web_application",
+    "test": "web_application",
+    "env": {
+      "vars": [],
+      "proxy": "web_application"
+    }
+  },
+  "issues": [],
+  "ai_rules": {
+    "purpose": "Guide technical sessions using this file",
+    "session": "Load for coding/debugging; use buildstate.md for ideation",
+    "track": "Count exchanges, alert at 80% context limit",
+    "update": "Revise features, bugs, next_steps, change_log; sync with buildstate.md",
+    "rebalance": "Recommend after major feature implementation or bug fixes"
+  },
+  "_session_state": {
+    "last_session_id": "claude-session-001",
+    "last_modified_by": "Claude-2025-11-10T10:00",
+    "last_modified_at": "2025-11-10T14:27:56.324930",
+    "session_count": 1,
+    "requires_review": true,
+    "review_reason": "Added GitHub Copilot integration and change notification system"
+  }
+}
