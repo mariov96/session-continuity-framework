@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SCF Universal Context Sync</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            width: 380px;
+            min-height: 500px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        
+        .header {
+            padding: 20px;
+            text-align: center;
+            background: rgba(255, 255, 255, 0.1);
+        }
+        
+        .header h1 {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 5px;
+        }
+        
+        .header .subtitle {
+            font-size: 12px;
+            opacity: 0.8;
+        }
+        
+        .content {
+            padding: 20px;
+        }
+        
+        .status-section {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+        
+        .status-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        
+        .status-row:last-child {
+            margin-bottom: 0;
+        }
+        
+        .status-label {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+        
+        .status-value {
+            font-size: 14px;
+            font-weight: 500;
+        }
+        
+        .status-indicator {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-left: 8px;
+        }
+        
+        .status-online { background: #22c55e; }
+        .status-offline { background: #ef4444; }
+        .status-warning { background: #f59e0b; }
+        
+        .toggle-button {
+            width: 100%;
+            padding: 12px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            margin-bottom: 12px;
+        }
+        
+        .toggle-enabled {
+            background: rgba(34, 197, 94, 0.2);
+            color: white;
+            border: 1px solid rgba(34, 197, 94, 0.4);
+        }
+        
+        .toggle-disabled {
+            background: rgba(239, 68, 68, 0.2);
+            color: white;
+            border: 1px solid rgba(239, 68, 68, 0.4);
+        }
+        
+        .action-button {
+            width: 100%;
+            padding: 10px;
+            border: none;
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            margin-bottom: 8px;
+        }
+        
+        .action-button:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+        
+        .action-button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .tabs-section {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+        
+        .section-title {
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 12px;
+            opacity: 0.9;
+        }
+        
+        .tab-item {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 8px;
+            font-size: 12px;
+        }
+        
+        .tab-item:last-child {
+            margin-bottom: 0;
+        }
+        
+        .tab-provider {
+            font-weight: 500;
+            color: #fbbf24;
+            margin-bottom: 4px;
+        }
+        
+        .tab-title {
+            opacity: 0.9;
+            margin-bottom: 2px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        .tab-url {
+            opacity: 0.7;
+            font-size: 11px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        .footer {
+            padding: 16px 20px;
+            background: rgba(255, 255, 255, 0.05);
+            text-align: center;
+            font-size: 11px;
+            opacity: 0.7;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 20px;
+            opacity: 0.7;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 20px;
+            opacity: 0.7;
+            font-size: 13px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🎼 SCF Context Sync</h1>
+        <div class="subtitle">Universal LLM Integration</div>
+    </div>
+    
+    <div class="content">
+        <!-- Status Section -->
+        <div class="status-section">
+            <div class="status-row">
+                <span class="status-label">Sync Status</span>
+                <span class="status-value" id="sync-status">
+                    Loading...
+                    <span class="status-indicator" id="sync-indicator"></span>
+                </span>
+            </div>
+            <div class="status-row">
+                <span class="status-label">Local Server</span>
+                <span class="status-value" id="server-status">
+                    Checking...
+                    <span class="status-indicator" id="server-indicator"></span>
+                </span>
+            </div>
+            <div class="status-row">
+                <span class="status-label">Active Tabs</span>
+                <span class="status-value" id="tab-count">0</span>
+            </div>
+        </div>
+        
+        <!-- Toggle Button -->
+        <button class="toggle-button" id="toggle-sync">
+            Loading...
+        </button>
+        
+        <!-- Action Buttons -->
+        <button class="action-button" id="export-all">
+            📁 Export All Conversations
+        </button>
+        
+        <button class="action-button" id="health-check">
+            🏥 Check Server Health
+        </button>
+        
+        <!-- Connected Tabs -->
+        <div class="tabs-section">
+            <div class="section-title">Connected LLM Tabs</div>
+            <div id="tabs-container">
+                <div class="loading">Loading tabs...</div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="footer">
+        Session Continuity Framework v2.0<br>
+        Universal Context Orchestration
+    </div>
+    
+    <script src="popup.js"></script>
+</body>
+</html>
