@@ -1,0 +1,144 @@
+{
+  "meta": {
+    "spec": "v1.0",
+    "repo": "web_application",
+    "purpose": "Technical specification for a new project. See buildstate.md for ideation and context.",
+    "rebalanced_at": "2025-07-19"
+  },
+  "project": {
+    "name": "web_application",
+    "version": "1.0",
+    "type": "web_application",
+    "stakeholder": "web_application"
+  },
+  "user_stories": [
+    "Define stakeholder needs as ideation progresses"
+  ],
+  "success_metrics": [
+    "Define measurable outcomes during planning"
+  ],
+  "features": [
+    {
+      "id": "web_application",
+      "name": "web_application",
+      "priority": "web_application",
+      "status": "🔄",
+      "desc": "Define feature purpose"
+    }
+  ],
+  "stack": ["web_application"],
+  "structure": {
+    "web_application": "Define file structure as project takes shape"
+  },
+  "models": {
+    "web_application": {
+      "desc": "Define model structure"
+    }
+  },
+  "api_docs": "web_application",
+  "coding_standards": {
+    "organization": "Modular components, separate logic/services, grouped folders",
+    "naming": {
+      "components": "PascalCase",
+      "functions": "camelCase",
+      "constants": "UPPER_SNAKE_CASE",
+      "css": "kebab-case"
+    },
+    "errors": ["Try-catch async", "Detailed logging", "User messages"],
+    "docs": ["File headers", "Function comments", "Inline comments"],
+    "performance": ["Optimize re-renders", "Lazy loading", "Debouncing"]
+  },
+  "environment": {
+    "phase": "Ideation",
+    "focus": "Define scope, stack, and architecture",
+    "api_url": "web_application",
+    "proxy": "web_application"
+  },
+  "change_log": [
+    {
+      "date": "2025-07-19",
+      "version": "v1.0",
+      "desc": "Initial SCF setup for new project",
+      "synced_with": "buildstate.md"
+    }
+  ],
+  "next_steps": [
+    "Build VS Code extension for SCF (high priority - daily use)",
+    "Test Cline .clinerules support and AGENTS.md compatibility",
+    "Integrate buildstate with Claude Code Projects",
+    "Test Codex direct integration with AGENTS.md",
+    "Research GitHub Copilot context injection API"
+  ],
+  "bugs": [],
+  "decisions": [
+    {
+      "date": "2025-11-10",
+      "impact": 8,
+      "decision": "SCF positioning strategy: Market as 'AGENTS.md Plus Intelligence'",
+      "rationale": "Analysis shows SCF provides persistent context continuity that agents.md (static) and AG2 (ephemeral) both lack",
+      "context": "Competitive analysis of agents.md and AG2.ai frameworks"
+    },
+    {
+      "date": "2025-11-10", 
+      "impact": 7,
+      "decision": "Add AGENTS.md symlink for ecosystem compatibility",
+      "rationale": "20,000+ projects use agents.md standard - symlink provides compatibility without complexity",
+      "context": "Need to research what tools actually detect AGENTS.md files"
+    },
+    {
+      "date": "2025-11-10",
+      "impact": 9,
+      "decision": "Implement AGENTS.md generator and auto-symlink in SCF",
+      "rationale": "Research confirms Zed, Aider, Cursor, and many tools scan for AGENTS.md - provides immediate ecosystem compatibility",
+      "context": "Tools detected: Zed (8 filenames), Aider (--read), Cursor (.cursorrules), Gemini CLI, GitHub Copilot"
+    },
+    {
+      "date": "2025-11-10",
+      "impact": 9,
+      "decision": "Create dedicated init_scf.py and update_scf.py for precise project control",
+      "rationale": "Need targeted, one-project-at-a-time operations separate from ecosystem-wide learner. Certainty over what's being changed.",
+      "context": "User wants explicit control over which project receives updates vs automatic discovery"
+    },
+    {
+      "date": "2025-11-10",
+      "impact": 8,
+      "decision": "Add SCF productivity analytics and growth tracking",
+      "rationale": "Measure logarithmic growth in productivity, context efficiency, and innovation velocity to validate SCF impact",
+      "context": "Track: session efficiency, context reuse, cross-project learning adoption, time-to-implementation"
+    },
+    {
+      "date": "2025-11-10",
+      "impact": 10,
+      "decision": "Make session portability a core SCF tenant",
+      "rationale": "Network issues, token limits, and interruptions shouldn't kill momentum. SCF enables seamless LLM switching and session resume.",
+      "context": "Core principle: Never lose progress. SESSION_RESUME.md + buildstate = perfect continuity across any interruption or LLM"
+    },
+    {
+      "date": "2025-11-10",
+      "impact": 7,
+      "decision": "Create SCF Knowledge Base for tracking external frameworks",
+      "rationale": "Continuous learning from agents.md, AG2, Cursor, Zed, Aider. Monthly checks for updates, quarterly deep dives.",
+      "context": "KB tracks: versions, features, integration opportunities, competitive positioning. Next check: 2025-12-10"
+    }
+  ],
+  "roadmap": {
+    "next": ["Research AGENTS.md detection mechanisms", "Implement AGENTS.md generator", "Add symlink automation"],
+    "future": ["AG2 runtime integration", "Universal compatibility layer"]
+  },
+  "tasks": {
+    "start": "web_application",
+    "test": "web_application",
+    "env": {
+      "vars": [],
+      "proxy": "web_application"
+    }
+  },
+  "issues": [],
+  "ai_rules": {
+    "purpose": "Guide technical sessions using this file",
+    "session": "Load for coding/debugging; use buildstate.md for ideation",
+    "track": "Count exchanges, alert at 80% context limit",
+    "update": "Revise features, bugs, next_steps, change_log; sync with buildstate.md",
+    "rebalance": "Recommend after major feature implementation or bug fixes"
+  }
+}

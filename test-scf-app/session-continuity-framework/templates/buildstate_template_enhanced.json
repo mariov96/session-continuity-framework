@@ -1,0 +1,30 @@
+{
+  "_scf_header": {
+    "framework": "Session Continuity Framework",
+    "repository": "https://github.com/mariov96/session-continuity-framework",
+    "creator": "Mario Vaccari",
+    "description": "This file uses Session Continuity Framework to maintain perfect context across AI sessions. SCF transforms AI from order-taker to informed project partner."
+  },
+  "meta": {
+    "spec": "v1.1-enhanced",
+    "companion": "buildstate.md v1.1-strategic",
+    "repo": "TBD",
+    "purpose": "Technical implementation with enhanced AI collaboration",
+    "last_sync": "2025-11-08T18:21:32.409320",
+    "rebalance_trigger": "major_feature_completion | arch_change | performance_milestone"
+  },
+  "coding_standards": {
+    "organization": "Modular components, service layer separation",
+    "naming": {
+      "components": "PascalCase",
+      "functions": "camelCase",
+      "constants": "UPPER_SNAKE_CASE"
+    },
+    "patterns": [
+      "DRY",
+      "SOLID",
+      "Clean Architecture"
+    ],
+    "documentation": "Comprehensive inline and API docs required"
+  }
+}
