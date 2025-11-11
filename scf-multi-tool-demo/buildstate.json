@@ -1,0 +1,94 @@
+{
+  "_scf_header": {
+    "framework": "Session Continuity Framework - Multi-Tool Orchestration",
+    "description": "Demonstrates intelligent context orchestration across Claude, Cline, and VS Code",
+    "version": "v2.1-multi-tool"
+  },
+  "project": {
+    "name": "React Component Library",
+    "type": "component_library",
+    "phase": "design_and_implementation",
+    "version": "0.1.0"
+  },
+  "orchestration_config": {
+    "preferred_agents": [
+      "claude",
+      "cline",
+      "vscode"
+    ],
+    "context_optimization": true,
+    "cost_awareness": true,
+    "parallel_execution": true
+  },
+  "stack": [
+    "React",
+    "TypeScript",
+    "Storybook",
+    "Jest",
+    "Rollup"
+  ],
+  "features": [
+    "Button component with variants",
+    "Input component with validation",
+    "Card component with layouts",
+    "Automated testing suite",
+    "Storybook documentation",
+    "NPM package build"
+  ],
+  "tool_preferences": {
+    "architecture_design": "claude",
+    "code_implementation": "cline",
+    "development_environment": "vscode",
+    "documentation": "claude",
+    "testing": "cline",
+    "optimization": "vscode"
+  },
+  "session_objectives": {
+    "current": [
+      "Design component architecture with Claude's strategic thinking",
+      "Implement components with Cline's automated execution",
+      "Optimize development environment with VS Code integration",
+      "Maintain context continuity across all tools"
+    ]
+  },
+  "multi_agent_capabilities": {
+    "claude": {
+      "optimal_for": [
+        "system_design",
+        "architecture_decisions",
+        "strategic_planning"
+      ],
+      "context_needs": [
+        "business_context",
+        "user_personas",
+        "technical_requirements"
+      ]
+    },
+    "cline": {
+      "optimal_for": [
+        "file_creation",
+        "code_generation",
+        "automated_tasks",
+        "testing"
+      ],
+      "context_needs": [
+        "technical_stack",
+        "implementation_details",
+        "file_structure"
+      ]
+    },
+    "vscode": {
+      "optimal_for": [
+        "code_editing",
+        "debugging",
+        "environment_setup",
+        "extensions"
+      ],
+      "context_needs": [
+        "development_workflow",
+        "tool_configuration",
+        "productivity_patterns"
+      ]
+    }
+  }
+}
