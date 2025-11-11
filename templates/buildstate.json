@@ -5,6 +5,22 @@
     "creator": "Mario Vaccari",
     "description": "This file uses Session Continuity Framework to maintain perfect context across AI sessions. SCF transforms AI from order-taker to informed project partner."
   },
+  "_scf_metadata": {
+    "scf_home": "/home/mario/projects/session-continuity-framework",
+    "scf_version": "v2.1.0",
+    "last_sync_date": null,
+    "last_sync_from": null,
+    "sync_status": "unknown",
+    "features_available": [
+      "self_aware_buildstate",
+      "github_copilot_integration",
+      "agents_md_compatibility",
+      "inheritance_chain",
+      "change_notifications"
+    ],
+    "phone_home_command": "python3 /home/mario/projects/session-continuity-framework/update_scf.py {project_path}",
+    "health_check_command": "python3 -c \"import json; from pathlib import Path; bs=json.loads(Path('buildstate.json').read_text()); print('SCF Status:', '✅ Self-aware' if '_session_state' in bs else '❌ Needs update'); print('Copilot:', '✅' if Path('.github/copilot-instructions.md').exists() else '❌'); print('AGENTS.md:', '✅' if Path('AGENTS.md').exists() else '❌')\""
+  },
   "_session_state": {
     "last_session_id": null,
     "last_modified_by": null,
@@ -172,6 +188,26 @@
       "update_state": "Set _session_state with your session_id, timestamp, increment session_count",
       "mark_review": "Set requires_review=true before closing if you made significant changes"
     },
+    "scf_status_check": {
+      "description": "Self-check to verify if this project has latest SCF capabilities",
+      "user_prompt": "User can ask: 'Check my SCF status' or 'Am I up to date with SCF?'",
+      "what_to_check": [
+        "✓ _session_state exists in buildstate.json",
+        "✓ self_awareness rules exist in ai_rules",
+        "✓ AGENTS.md file exists (symlink to buildstate.md)",
+        "✓ .github/copilot-instructions.md exists",
+        "✓ .scf/buildstate.library.json exists (inheritance chain)"
+      ],
+      "scoring": "Count features present: 5/5 = 🟢 Up to date | 3-4/5 = 🟡 Needs sync | 0-2/5 = 🔴 Out of date",
+      "quick_command": "python3 -c \"import json; from pathlib import Path; bs=json.loads(Path('buildstate.json').read_text()); checks = [('_session_state' in bs, 'Self-aware buildstate'), ('self_awareness' in bs.get('ai_rules', {}), 'AI self-awareness rules'), (Path('AGENTS.md').exists(), 'AGENTS.md'), (Path('.github/copilot-instructions.md').exists(), 'GitHub Copilot'), (Path('.scf/buildstate.library.json').exists(), 'Inheritance chain')]; score = sum(1 for c, _ in checks if c); print('\\n🔍 SCF Status Check:'); [print(f\\\"├─ {name}: {'✅' if check else '❌'}\\\" for check, name in checks]; print(f'└─ Score: {score}/5'); status = '🟢 Up to date' if score == 5 else '🟡 Needs sync' if score >= 3 else '🔴 Out of date'; print(f'\\n📊 {status}')\"",
+      "phone_home_on_low_score": {
+        "trigger": "If score < 5/5",
+        "action": "Sync with latest SCF enhancements",
+        "command_template": "python3 {scf_home}/update_scf.py {project_path}",
+        "scf_home_from": "_scf_metadata.scf_home",
+        "auto_sync": "python3 $(cat buildstate.json | python3 -c 'import sys,json; print(json.load(sys.stdin)[\"_scf_metadata\"][\"scf_home\"])')/update_scf.py $(pwd)"
+      }
+    },
     "track": "Count exchanges, alert at 80% context limit",
     "update": "Revise features, bugs, next_steps, change_log; sync with buildstate.md",
     "rebalance": "Recommend after major feature implementation or bug fixes"
@@ -183,9 +219,21 @@
     "rebalance_suggestions": "automated_on_triggers",
     "sync_automation": "sync_buildstate.py framework ready",
     "scf_commands": {
-      "time": "Intelligent token usage estimate with capacity warnings",
-      "rules": "List active rules and behavioral guidelines", 
-      "closeout": "Provide updated buildstate file for session end"
+      "help": "/scf_help - Show all SCF commands and reference guide",
+      "status": "/scf_status - Check SCF compliance (0-5 score) and verify all features present",
+      "sync": "/scf_sync - Phone home to SCF repo and update with latest features",
+      "session": "/scf_session - Check who last modified project and review session state",
+      "update_state": "/scf_update_state - Mark your session as active in _session_state",
+      "rebalance": "/scf_rebalance - Sync buildstate.json ↔ buildstate.md after major changes",
+      "changes": "/scf_changes - Detect recent changes and assess impact/risks",
+      "copilot": "/scf_copilot - Generate or update GitHub Copilot integration files",
+      "init": "/scf_init - Initialize SCF in a new project from scratch",
+      "context": "/scf_context - Load full project context for AI session start",
+      "time": "/scf_time - Intelligent token usage estimate with capacity warnings",
+      "rules": "/scf_rules - List active rules and behavioral guidelines",
+      "closeout": "/scf_closeout - Generate session end summary and update state",
+      "learn": "/scf_learn - Study SCF repository patterns and best practices",
+      "reference": "Full docs: /home/mario/projects/session-continuity-framework/docs/SCF_COMMANDS_REFERENCE.md"
     }
   }
 }

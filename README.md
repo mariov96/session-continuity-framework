@@ -51,13 +51,35 @@ python3 buildstate_hunter_learner.py --rebalance-all --dry-run
 
 ### 3. Create New Project
 ```bash
-# Set up inheritance-based project
-python3 scf_inheritance.py setup-project /path/to/new-project
+# Initialize SCF in new project
+python3 init_scf.py /path/to/new-project
 
-# Copy master templates
-cp templates/buildstate.json /path/to/new-project/
-cp templates/buildstate.md /path/to/new-project/
+# Or update existing project
+python3 update_scf.py /path/to/existing-project
+
+# Check SCF status (are you up to date?)
+/scf_status
+
+# See all available commands
+/scf_help
 ```
+
+### 4. SCF Commands Reference
+
+SCF provides intuitive `/scf_*` commands that AI assistants and users can invoke:
+
+```
+/scf_help          Show all commands and reference guide
+/scf_status        Check SCF compliance (0-5 score)
+/scf_sync          Phone home & update with latest features
+/scf_session       Check who last modified project
+/scf_rebalance     Sync buildstate.json ↔ buildstate.md
+/scf_changes       Review recent changes & assess impact
+```
+
+**See full command reference:** [docs/SCF_COMMANDS_REFERENCE.md](docs/SCF_COMMANDS_REFERENCE.md)
+
+---
 
 ## Core Components
 

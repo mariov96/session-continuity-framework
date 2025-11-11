@@ -49,6 +49,47 @@ Created by: Mario Vaccari
    - Set `review_reason` to summarize what changed
    - Update `last_modified_at`
 
+---
+
+### 🔍 SCF Status Check
+
+**If the user asks "Am I up to date with SCF?" or "Check my SCF status":**
+
+Run this quick self-assessment to verify the project has latest SCF capabilities:
+
+**Check These 5 Features:**
+- ✓ `_session_state` exists in buildstate.json
+- ✓ `self_awareness` rules exist in ai_rules  
+- ✓ `AGENTS.md` file exists (symlink to buildstate.md)
+- ✓ `.github/copilot-instructions.md` exists
+- ✓ `.scf/buildstate.library.json` exists (inheritance chain)
+
+**Scoring:**
+- 5/5 = 🟢 **Up to date** - All SCF features present
+- 3-4/5 = 🟡 **Needs sync** - Missing some features
+- 0-2/5 = 🔴 **Out of date** - Major features missing
+
+**Quick Command:**
+```bash
+python3 -c "import json; from pathlib import Path; bs=json.loads(Path('buildstate.json').read_text()); checks = [('_session_state' in bs, 'Self-aware buildstate'), ('self_awareness' in bs.get('ai_rules', {}), 'AI self-awareness rules'), (Path('AGENTS.md').exists(), 'AGENTS.md'), (Path('.github/copilot-instructions.md').exists(), 'GitHub Copilot'), (Path('.scf/buildstate.library.json').exists(), 'Inheritance chain')]; score = sum(1 for c, _ in checks if c); print('\n🔍 SCF Status Check:'); [print(f'├─ {name}: {\"✅\" if check else \"❌\"}') for check, name in checks]; print(f'└─ Score: {score}/5'); status = '🟢 Up to date' if score == 5 else '🟡 Needs sync' if score >= 3 else '🔴 Out of date'; print(f'\n📊 {status}')"
+```
+
+**If Score < 5 - Phone Home to Sync:**
+
+The project knows where SCF framework lives (in `_scf_metadata.scf_home`). Run:
+```bash
+python3 $(cat buildstate.json | python3 -c 'import sys,json; print(json.load(sys.stdin)["_scf_metadata"]["scf_home"])')/update_scf.py $(pwd)
+```
+
+This will:
+- Sync latest SCF templates
+- Add missing features
+- Update buildstate files
+- Generate GitHub Copilot instructions
+- Create AGENTS.md symlink
+
+---
+
 ### Impact Assessment Template (if changes detected):
 
 ```markdown
@@ -75,6 +116,36 @@ I've detected that another AI session modified this project since <date>.
 **May I proceed with implementing these changes?**
 [Wait for user approval]
 ```
+
+---
+
+### 💬 SCF Commands - `/scf_help`
+
+**Quick command reference for maintaining your SCF-enabled project:**
+
+```
+/scf_help          Show all SCF commands and full reference guide
+/scf_status        Check SCF compliance (0-5 score)
+/scf_sync          Phone home & update with latest SCF features
+/scf_session       Check who last modified project
+/scf_update_state  Mark your session as active
+/scf_rebalance     Sync buildstate.json ↔ buildstate.md
+/scf_changes       Review recent changes & assess impact
+/scf_copilot       Generate GitHub Copilot instructions
+/scf_init          Initialize SCF in new project
+/scf_context       Load full project context
+/scf_time          Check token usage & capacity
+/scf_rules         Show active AI rules
+/scf_closeout      Generate session end summary
+/scf_learn         Study SCF patterns & best practices
+```
+
+**Full command reference:** `/home/mario/projects/session-continuity-framework/docs/SCF_COMMANDS_REFERENCE.md`
+
+**Common workflows:**
+- Morning routine: `/scf_context` → `/scf_session` → `/scf_status`
+- During work: `/scf_time` → `/scf_rebalance` (after major features)
+- Evening routine: `/scf_rebalance` → `/scf_update_state` → `/scf_closeout`
 
 ---
 
