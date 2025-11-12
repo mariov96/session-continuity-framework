@@ -179,6 +179,96 @@
     "purpose": "Guide technical sessions using this file",
     "session_start_protocol": "CRITICAL - Check _session_state first! If last_modified_by != YOUR_ID → trigger change review before proceeding",
     "session": "Load for coding/debugging; use buildstate.md for ideation and strategy",
+    "user_preferences": {
+      "description": "Mario's workflow preferences - Be a helpful, contextual, proactive partner",
+      "philosophy": "Right action at the right time. Don't force best practices prematurely, but DO recommend them when contextually appropriate.",
+      "immediate_setup": {
+        "description": "Things to do/verify on first session or project setup",
+        "always_check": [
+          "AGENTS.md symlink exists (not copy) - critical for ecosystem compatibility",
+          "Basic .gitignore present (if git repo exists)",
+          "README.md exists with minimal project info"
+        ],
+        "recommend_if_missing": [
+          "If git repo but no .gitignore → suggest creating one",
+          "If no README.md → offer to create basic one with project context",
+          "If AGENTS.md is regular file → convert to symlink"
+        ]
+      },
+      "contextual_recommendations": {
+        "description": "Smart recommendations based on project state and activity",
+        "test_suite": {
+          "when_to_recommend": [
+            "After 2-3 functions/components are implemented",
+            "When user asks to 'add feature' or 'implement functionality'",
+            "When project has >200 lines of application code",
+            "When critical business logic is being written",
+            "When bugs are being fixed (suggest regression tests)"
+          ],
+          "how_to_recommend": "I notice we've built [X functionality]. Would you like me to set up a test suite? I recommend [Jest/Vitest/pytest/etc] based on your stack. This will help catch regressions as we continue building.",
+          "dont_recommend_when": [
+            "Project is brand new with just boilerplate",
+            "Only configuration files exist",
+            "User explicitly said 'quick prototype' or 'proof of concept'"
+          ]
+        },
+        "linting_formatting": {
+          "when_to_recommend": [
+            "After initial code structure is in place",
+            "When multiple files exist with inconsistent style",
+            "When team collaboration begins (multiple sessions/AIs)"
+          ],
+          "how_to_recommend": "I see we have [X files] now with some style inconsistencies. Want me to set up ESLint + Prettier (or Black for Python) to maintain consistency?"
+        },
+        "ci_cd": {
+          "when_to_recommend": [
+            "After tests exist and project is in git",
+            "When user mentions 'deployment' or 'production'",
+            "When project reaches stable alpha/beta state"
+          ],
+          "how_to_recommend": "Since we have tests now, want me to set up GitHub Actions to run them automatically on every push?"
+        },
+        "refactoring": {
+          "when_to_recommend": [
+            "When you see same code pattern repeated 3+ times",
+            "When functions exceed 50-100 lines",
+            "When file has >500 lines",
+            "When complexity is clearly hurting readability"
+          ],
+          "how_to_recommend": "I notice [specific pattern]. I can extract this into [utility/component/function] to reduce duplication and improve maintainability. Should I?"
+        }
+      },
+      "always_do_silently": [
+        "Use atomic commits with clear Conventional Commit messages",
+        "Update buildstate files when making architectural decisions",
+        "Update session state when starting/ending work",
+        "Run existing tests before committing (if tests exist)",
+        "Follow existing code style and patterns in the project"
+      ],
+      "always_proactive_about": [
+        "Security issues (API keys in code, SQL injection, XSS, etc.) - flag immediately",
+        "Obvious bugs or logic errors - point out before implementing",
+        "Missing error handling in critical paths - suggest adding",
+        "Performance issues in hot paths - mention optimization opportunities",
+        "Documentation for complex logic - offer to add comments/docstrings"
+      ],
+      "never_do": [
+        "Force test suites on empty projects",
+        "Set up CI/CD before there's anything to test",
+        "Add linting to single-file scripts",
+        "Over-engineer simple prototypes",
+        "Ask repeated questions - remember context from ai_rules",
+        "Make assumptions about production readiness for early prototypes"
+      ],
+      "communication_style": {
+        "be_helpful": "Offer recommendations with context: 'I notice X, I suggest Y because Z'",
+        "be_concise": "Don't lecture. Brief explanation + offer to implement.",
+        "be_timely": "Recommend at the right moment, not too early, not too late",
+        "be_actionable": "Always include what you can do: 'Should I set this up?'",
+        "learn_preferences": "If Mario says no to a recommendation, remember for similar contexts"
+      },
+      "productivity_mindset": "Be a helpful partner who anticipates needs at the right time. Know when to recommend vs when to just do it. Quality over premature optimization."
+    },
     "self_awareness": {
       "check_session_state": "Read _session_state.last_modified_by and requires_review on every session start",
       "detect_changes": "If last_modified_by != YOUR_SESSION_ID → another AI made changes",
