@@ -49,14 +49,17 @@ python3 buildstate_hunter_learner.py --update-libraries --inheritance-level org
 python3 buildstate_hunter_learner.py --rebalance-all --dry-run
 ```
 
-### 3. Create New Project
+### 3. Create or Update a Project
 ```bash
-# Initialize SCF in new project
+# Initialize SCF in a new project
 python3 init_scf.py /path/to/new-project
 
-# Or update existing project
+# Update an existing project with the latest SCF improvements
 python3 update_scf.py /path/to/existing-project
+```
 
+### 4. Check Project Status
+```bash
 # Check SCF status (are you up to date?)
 /scf_status
 
@@ -111,6 +114,12 @@ Intelligent optimization of information architecture:
 - **Smart Classification**: Technical data → JSON, Strategic context → Markdown
 - **Safety Features**: Automatic backups and change logging
 - **Batch Processing**: Handle multiple projects with configurable thresholds
+
+### Project Management Scripts (`init_scf.py` & `update_scf.py`)
+Targeted, one-project-at-a-time control for precise project management:
+
+- **`init_scf.py`**: Initializes a new project with the latest SCF templates, sets up the inheritance chain, and creates the `AGENTS.md` symlink for immediate ecosystem compatibility.
+- **`update_scf.py`**: Updates an existing project by rebalancing content, syncing the inheritance chain, merging template improvements, and refreshing LLM integration configurations, all while preserving existing customizations.
 
 ## Architecture Principles
 

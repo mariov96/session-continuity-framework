@@ -24,6 +24,7 @@ Features:
 import json
 import shutil
 import argparse
+import subprocess
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, Dict, Any
@@ -46,7 +47,8 @@ class SCFProjectInitializer:
         self.templates_dir = self.framework_root / "templates"
         
     def init_project(self, project_path: Path, template_type: str = "default", 
-                    force: bool = False) -> bool:
+                    force: bool = False,
+                    auto_commit: bool = False) -> bool:
         """Initialize SCF for a specific project"""
         
         print(f"🚀 Initializing SCF for project: {project_path}")
@@ -105,6 +107,10 @@ class SCFProjectInitializer:
         success = self._setup_llm_integration(project_path)
         if not success:
             return False
+
+        # Step 6: Auto-commit changes if requested
+        if auto_commit:
+            self._auto_commit_changes(project_path)
             
         print("\n🎉 SCF initialization complete!")
         print(f"✅ Project {project_path.name} is now SCF-enabled")
@@ -169,6 +175,10 @@ class SCFProjectInitializer:
             # Update project-specific fields
             data['project']['name'] = project_path.name
             data['meta']['repo'] = project_path.name
+
+            # Update SCF metadata
+            if '_scf_metadata' in data:
+                data['_scf_metadata']['last_sync_date'] = datetime.utcnow().isoformat()
             
             # Add initialization log entry
             if 'change_log' not in data:
@@ -212,9 +222,21 @@ class SCFProjectInitializer:
             return True
             
         try:
+            # Create private directory and .gitignore
+            scf_dir = project_path / ".scf"
+            private_dir = scf_dir / "private"
+            private_dir.mkdir(parents=True, exist_ok=True)
+            
+            gitignore_path = scf_dir / ".gitignore"
+            gitignore_content = "private/"
+            if not gitignore_path.exists() or gitignore_content not in gitignore_path.read_text():
+                with open(gitignore_path, "a") as f:
+                    f.write(f"\n{gitignore_content}\n")
+                print(f"   ✅ Created .gitignore to protect private overrides")
+
             project_setup = SCFProjectSetup()
             success = project_setup.setup_project_inheritance(
-                project_path, 
+                project_path,
                 create_missing=True
             )
             
@@ -327,6 +349,44 @@ class SCFProjectInitializer:
             
         return True
 
+    def _auto_commit_changes(self, project_path: Path):
+        """Automatically commit initial SCF files to git."""
+        if self.dry_run:
+            print("   🔍 Would auto-commit initial SCF files")
+            return
+
+        print(f"🤖 Step 6: Auto-committing initial files")
+        try:
+            # Check if it's a git repository
+            subprocess.run(["git", "rev-parse"], cwd=project_path, check=True, capture_output=True)
+
+            commit_message = f"feat(scf): Initialize Session Continuity Framework\n\n"
+            commit_message += "This commit adds the initial SCF files to the project, including:\n"
+            commit_message += "- buildstate.json: For technical specifications and AI rules.\n"
+            commit_message += "- buildstate.md: For strategic vision and documentation.\n"
+            commit_message += "- .scf/: For inheritance and private configurations.\n"
+            commit_message += "- AGENTS.md: For ecosystem compatibility."
+
+            # Stage the new files
+            files_to_add = [
+                "buildstate.json",
+                "buildstate.md",
+                ".scf/",
+                "AGENTS.md",
+                ".github/" # Also add copilot files
+            ]
+            for file_path in files_to_add:
+                if (project_path / file_path).exists():
+                    subprocess.run(["git", "add", str(file_path)], cwd=project_path, check=True)
+            
+            # Commit the changes
+            subprocess.run(["git", "commit", "-m", commit_message], cwd=project_path, check=True)
+            
+            print("   ✅ Initial SCF files committed successfully.")
+
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            print("   ⚠️  Could not auto-commit. Is this a git repository?")
+
 def main():
     parser = argparse.ArgumentParser(
         description="Initialize SCF for a specific project",
@@ -342,13 +402,15 @@ Examples:
     
     parser.add_argument('project_path', type=Path, 
                        help='Path to project directory to initialize with SCF')
-    parser.add_argument('--template-type', choices=['default', 'llm-enhanced'], 
-                       default='default',
-                       help='Type of SCF templates to use (default: default)')
+    parser.add_argument('--template-type', choices=['default', 'llm-enhanced'],
+               default='llm-enhanced',
+               help='Type of SCF templates to use (default: llm-enhanced)')
     parser.add_argument('--force', action='store_true',
                        help='Force initialization even if SCF files exist')
     parser.add_argument('--dry-run', action='store_true',
                        help='Show what would be done without making changes')
+    parser.add_argument('--auto-commit', action='store_true',
+                       help='Automatically commit the initial SCF files')
     
     args = parser.parse_args()
     
@@ -357,7 +419,8 @@ Examples:
     success = initializer.init_project(
         args.project_path, 
         template_type=args.template_type,
-        force=args.force
+        force=args.force,
+        auto_commit=args.auto_commit
     )
     
     if success:

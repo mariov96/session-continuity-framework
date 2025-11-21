@@ -40,6 +40,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Any, Tuple, Union
 from dataclasses import dataclass, field
 from enum import Enum
+from scf_analytics import SCFAnalytics
 
 class LLMType(Enum):
     """Supported LLM types with specific formatting needs"""
@@ -96,9 +97,12 @@ class SCFLLMIntegrator:
         self.session_insights: List[SessionInsight] = []
         self.current_session_id = None
         self.session_start_time = None
+        self.analytics = None
         
         if auto_detect:
             self._detect_buildstate_files()
+            if self.buildstate_json_path:
+                self.analytics = SCFAnalytics(self.buildstate_json_path)
             
     def _detect_buildstate_files(self):
         """Automatically detect buildstate files in project"""
@@ -140,6 +144,10 @@ class SCFLLMIntegrator:
         """
         self.current_session_id = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         self.session_start_time = datetime.now()
+        
+        # Start analytics tracking
+        if self.analytics:
+            self.analytics.start_session()
         
         # Load current buildstate data
         buildstate_data = self._load_buildstate_data()
@@ -710,6 +718,15 @@ Ready to proceed. What would you like to work on?"""
         # Generate session completion summary
         summary = self.get_session_summary()
         
+        # End analytics session
+        if self.analytics:
+            # Estimate time saved for now, can be refined later
+            time_saved_estimate = summary.get('high_impact_insights', 0) * 5
+            self.analytics.end_session(
+                time_saved_minutes=time_saved_estimate,
+                context_reused=True # Assume context was reused
+            )
+
         # Update buildstate with session completion
         if self.buildstate_json_path and self.buildstate_json_path.exists():
             try:
@@ -745,6 +762,12 @@ Ready to proceed. What would you like to work on?"""
         if trigger_rebalancing:
             rebalance_result = self._trigger_rebalancing()
             
+        # Log the conversation
+        log_summary = f"Session completed with {summary.get('total_insights', 0)} insights captured."
+        if session_summary:
+            log_summary += f" User summary: {session_summary}"
+        self.log_conversation(self.current_session_id, log_summary)
+
         # Reset session state
         completion_summary = {
             'session_id': self.current_session_id,
@@ -759,6 +782,35 @@ Ready to proceed. What would you like to work on?"""
         self.session_insights = []
         
         return completion_summary
+
+    def log_conversation(self, session_id: str, summary: str, commit_hash: Optional[str] = None):
+        """Logs a conversation summary to the buildstate."""
+        if not self.buildstate_json_path or not self.buildstate_json_path.exists():
+            print("⚠️  Cannot log conversation, buildstate.json not found.")
+            return
+
+        try:
+            with open(self.buildstate_json_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+
+            if '_conversation_log' not in data:
+                data['_conversation_log'] = []
+
+            log_entry = {
+                "session_id": session_id,
+                "timestamp": datetime.utcnow().isoformat(),
+                "summary": summary,
+                "commit_hash": commit_hash
+            }
+            data['_conversation_log'].append(log_entry)
+
+            with open(self.buildstate_json_path, 'w', encoding='utf-8') as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+            
+            print("✅ Conversation logged successfully.")
+
+        except Exception as e:
+            print(f"⚠️  Error logging conversation: {e}")
         
     def _trigger_rebalancing(self) -> Dict[str, Any]:
         """Trigger SCF rebalancing process"""

@@ -1,0 +1,40 @@
+{
+    "name": "scf-session-viewer",
+    "displayName": "SCF Session State Viewer",
+    "description": "Displays the current SCF session state in the VS Code status bar.",
+    "version": "0.0.1",
+    "engines": {
+        "vscode": "^1.84.0"
+    },
+    "categories": [
+        "Other"
+    ],
+    "activationEvents": [
+        "onStartupFinished"
+    ],
+    "main": "./extension.js",
+    "contributes": {
+        "commands": [
+            {
+                "command": "scf-session-viewer.showSessionState",
+                "title": "Show SCF Session State"
+            }
+        ]
+    },
+    "scripts": {
+        "lint": "eslint .",
+        "pretest": "npm run lint",
+        "test": "node ./test/runTest.js"
+    },
+    "devDependencies": {
+        "@types/vscode": "^1.84.0",
+        "@types/glob": "^8.1.0",
+        "@types/mocha": "^10.0.4",
+        "@types/node": "18.x",
+        "eslint": "^8.54.0",
+        "glob": "^10.3.10",
+        "mocha": "^10.2.0",
+        "typescript": "^5.3.2",
+        "@vscode/test-electron": "^2.3.7"
+    }
+}

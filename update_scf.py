@@ -25,6 +25,7 @@ Features:
 import json
 import shutil
 import argparse
+import subprocess
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, Dict, Any, List, Tuple
@@ -63,8 +64,9 @@ class SCFProjectUpdater:
     def update_project(self, project_path: Path, 
                       force_rebalance: bool = False,
                       skip_inheritance: bool = False,
-                      skip_rebalance: bool = False) -> bool:
-        """Update SCF for a specific project"""
+                      skip_rebalance: bool = False,
+                      auto_commit: bool = False) -> bool:
+       """Update SCF for a specific project"""
         
         print(f"🔄 Updating SCF for project: {project_path.name}")
         print(f"📁 Project path: {project_path.absolute()}")
@@ -112,6 +114,10 @@ class SCFProjectUpdater:
             
         # Report changes
         self._report_changes(project_path)
+
+        # Step 6: Auto-commit changes if requested
+        if auto_commit:
+            self._auto_commit_changes(project_path)
         
         print("\n🎉 SCF update complete!")
         print(f"✅ Project {project_path.name} is up to date")
@@ -293,51 +299,47 @@ class SCFProjectUpdater:
             with open(buildstate_json_path, 'r', encoding='utf-8') as f:
                 project_data = json.load(f)
                 
-            # Load latest template
-            template_path = self.templates_dir / "buildstate.json"
+            # Load latest template (favoring llm-enhanced)
+            template_path = self.templates_dir / "buildstate-llm-enhanced.json"
             if not template_path.exists():
-                print("   ⚠️  Template not found - skipping merge")
+                template_path = self.templates_dir / "buildstate.json"
+
+            if not template_path.exists():
+                print("   ⚠️  No suitable template found - skipping merge")
                 return True
                 
             with open(template_path, 'r', encoding='utf-8') as f:
                 template_data = json.load(f)
                 
             # Merge improvements (preserve customizations)
-            updates_made = []
+            updates_made = self._recursive_merge(template_data, project_data)
+
+            # Also update the sync date and version
+            if '_scf_metadata' in project_data and '_scf_metadata' in template_data:
+                project_data['_scf_metadata']['last_sync_date'] = datetime.utcnow().isoformat()
+                new_version = template_data['_scf_metadata'].get('template_version')
+                if new_version:
+                    project_data['_scf_metadata']['template_version'] = new_version
+                updates_made.append("Updated _scf_metadata sync date and version")
             
-            # Update ai_rules if they're more comprehensive in template
-            if 'ai_rules' in template_data:
-                template_rules = template_data['ai_rules']
-                project_rules = project_data.get('ai_rules', {})
-                
-                for key, value in template_rules.items():
-                    if key not in project_rules:
-                        project_rules[key] = value
-                        updates_made.append(f"Added ai_rules.{key}")
-                        
-                project_data['ai_rules'] = project_rules
-                
-            # Update meta.spec if template is newer
-            if 'meta' in template_data and 'meta' in project_data:
-                if template_data['meta'].get('spec', '0.0') > project_data['meta'].get('spec', '0.0'):
-                    project_data['meta']['spec'] = template_data['meta']['spec']
-                    updates_made.append("Updated spec version")
-                    
             # Save if updates were made
-            if updates_made and not self.dry_run:
-                # Create backup first
-                backup_path = buildstate_json_path.with_suffix(f'.json.backup.{datetime.now().strftime("%Y%m%d_%H%M%S")}')
-                shutil.copy2(buildstate_json_path, backup_path)
-                
-                # Save updated file
-                with open(buildstate_json_path, 'w', encoding='utf-8') as f:
-                    json.dump(project_data, f, indent=2)
+            if updates_made:
+                if self.dry_run:
+                    print(f"   🔍 Would merge {len(updates_made)} improvements:")
+                    for update in updates_made:
+                        print(f"     - {update}")
+                else:
+                    # Create backup first
+                    backup_path = buildstate_json_path.with_suffix(f'.json.backup.{datetime.now().strftime("%Y%m%d_%H%M%S")}')
+                    shutil.copy2(buildstate_json_path, backup_path)
                     
-                self.changes_made.extend(updates_made)
-                print(f"   ✅ Merged {len(updates_made)} template improvements")
-                print(f"   💾 Backup saved: {backup_path.name}")
-            elif updates_made:
-                print(f"   🔍 Would merge {len(updates_made)} improvements")
+                    # Save updated file
+                    with open(buildstate_json_path, 'w', encoding='utf-8') as f:
+                        json.dump(project_data, f, indent=2, ensure_ascii=False)
+                        
+                    self.changes_made.extend(updates_made)
+                    print(f"   ✅ Merged {len(updates_made)} template improvements")
+                    print(f"   💾 Backup saved: {backup_path.name}")
             else:
                 print(f"   ✅ Project already has latest template features")
                 
@@ -346,6 +348,23 @@ class SCFProjectUpdater:
             return False
             
         return True
+
+    def _recursive_merge(self, template: Dict[str, Any], project: Dict[str, Any], path: str = "") -> List[str]:
+        """
+        Recursively merge new keys from template into project data.
+        Returns a list of changes made.
+        """
+        changes = []
+        for key, value in template.items():
+            current_path = f"{path}.{key}" if path else key
+            if key not in project:
+                project[key] = value
+                changes.append(f"Added new key: {current_path}")
+            elif isinstance(value, dict) and isinstance(project.get(key), dict):
+                # Recurse into nested dictionaries
+                nested_changes = self._recursive_merge(value, project[key], path=current_path)
+                changes.extend(nested_changes)
+        return changes
     
     def _update_llm_integration(self, project_path: Path) -> bool:
         """Update LLM integration capabilities"""
@@ -413,6 +432,32 @@ class SCFProjectUpdater:
             # Not critical
             
         return True
+
+    def _auto_commit_changes(self, project_path: Path):
+        """Automatically commit changes to git if requested."""
+        if not self.changes_made or self.dry_run:
+            return
+
+        print(f"🤖 Step 6: Auto-committing changes")
+        try:
+            # Check if it's a git repository
+            subprocess.run(["git", "rev-parse"], cwd=project_path, check=True, capture_output=True)
+
+            commit_message = f"chore(scf): Auto-update SCF for {project_path.name}\n\n"
+            commit_message += "Changes made:\n"
+            for change in self.changes_made:
+                commit_message += f"- {change}\n"
+
+            # Stage the buildstate files
+            subprocess.run(["git", "add", "buildstate.json", "buildstate.md"], cwd=project_path, check=True)
+            
+            # Commit the changes
+            subprocess.run(["git", "commit", "-m", commit_message], cwd=project_path, check=True)
+            
+            print("   ✅ Changes committed successfully.")
+
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            print("   ⚠️  Could not auto-commit. Is this a git repository?")
     
     def _report_changes(self, project_path: Path):
         """Report all changes made during update"""
@@ -454,6 +499,8 @@ Examples:
                        help='Skip inheritance chain sync')
     parser.add_argument('--dry-run', action='store_true',
                        help='Show what would be done without making changes')
+    parser.add_argument('--auto-commit', action='store_true',
+                       help='Automatically commit changes with a standardized message')
     
     args = parser.parse_args()
     
@@ -463,7 +510,8 @@ Examples:
         args.project_path,
         force_rebalance=args.force_rebalance,
         skip_inheritance=args.skip_inheritance,
-        skip_rebalance=args.skip_rebalance
+        skip_rebalance=args.skip_rebalance,
+        auto_commit=args.auto_commit
     )
     
     if success:

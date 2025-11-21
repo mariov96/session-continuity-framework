@@ -6,9 +6,14 @@
     "description": "LLM-optimized buildstate with automatic context injection, session tracking, and intelligent learning capture. SCF transforms AI from order-taker to informed project partner with continuous context awareness.",
     "version": "v2.0-llm-enhanced"
   },
+  "_scf_metadata": {
+    "template_version": "v2.1-analytics",
+    "source_repo": "https://github.com/mariov96/session-continuity-framework",
+    "last_sync_date": null
+  },
   "meta": {
     "spec": "v2.0-technical-llm",
-    "companion": "buildstate.md v2.0-strategic-llm", 
+    "companion": "buildstate.md v2.0-strategic-llm",
     "repo": "new-project",
     "purpose": "Technical implementation with automatic LLM context loading and session continuity",
     "last_sync": "2025-11-08T00:00:00Z",
@@ -16,7 +21,13 @@
   },
   "llm_integration": {
     "auto_context_injection": true,
-    "supported_llms": ["claude", "gpt", "grok", "gemini", "generic"],
+    "supported_llms": [
+      "claude",
+      "gpt",
+      "grok",
+      "gemini",
+      "generic"
+    ],
     "default_session_type": "implementation",
     "context_monitoring": {
       "enabled": true,
@@ -35,6 +46,26 @@
       "preserve_context_between_sessions": true,
       "auto_load_recent_decisions": true,
       "maintain_objective_focus": true
+    }
+  },
+  "scf_analytics": {
+    "metadata": {
+      "since": "2025-11-10T00:00:00Z",
+      "version": "1.0"
+    },
+    "sessions": {
+      "session_count": 0,
+      "total_time_saved_minutes": 0,
+      "context_reuse_count": 0,
+      "avg_session_quality": 0.0
+    },
+    "learning": {
+      "patterns_learned": 0,
+      "patterns_applied": 0
+    },
+    "velocity": {
+      "decisions_tracked": 0,
+      "features_completed": 0
     }
   },
   "project": {
@@ -89,7 +120,7 @@
   },
   "tasks": {
     "start": "TBD",
-    "test": "TBD", 
+    "test": "TBD",
     "build": "TBD",
     "deploy": "TBD",
     "env": {
@@ -102,7 +133,11 @@
     {
       "date": "2025-11-08",
       "type": "llm_integration_initialization",
-      "changes": ["enabled_automatic_context_loading", "configured_multi_llm_support", "activated_learning_capture"],
+      "changes": [
+        "enabled_automatic_context_loading",
+        "configured_multi_llm_support",
+        "activated_learning_capture"
+      ],
       "notes": "Enhanced buildstate for seamless LLM integration across all AI platforms"
     }
   ],
@@ -143,7 +178,7 @@
     "universal_compatibility": true,
     "scf_commands": {
       "time": "Intelligent token usage estimate with 80% capacity warnings",
-      "rules": "List all active behavioral guidelines and project protocols", 
+      "rules": "List all active behavioral guidelines and project protocols",
       "closeout": "Generate updated buildstate and trigger rebalancing for session completion",
       "focus": "Display current session objectives and priority areas",
       "insights": "Show captured insights and decisions from current session",
@@ -174,6 +209,7 @@
       "strategic_technical_balance": true,
       "trigger_on_major_changes": true,
       "preserve_session_continuity": true
-    }
+    },
+    "_conversation_log": []
   }
 }

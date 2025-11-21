@@ -62,6 +62,15 @@ class SCFInheritanceResolver:
         
         chain = []
         
+        # Level -1: Private overrides (.scf/private/private-overrides.json)
+        private_overrides = project_path / ".scf" / "private" / "private-overrides.json"
+        chain.append(InheritanceRule(
+            level=-1,
+            name="private_overrides",
+            path=private_overrides,
+            exists=private_overrides.exists()
+        ))
+
         # Level 0: Local project buildstate.json
         local_file = project_path / "buildstate.json"
         chain.append(InheritanceRule(
