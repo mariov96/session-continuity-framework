@@ -625,27 +625,30 @@ class SCFHubMenu:
 ╚══════════════════════════════════════════════════════════════╝
 
    1. 📁 Projects        - View and manage projects
-   2. 🔍 Scan            - Discover new projects
-   3. 🧠 Learn           - Gather learnings from projects
-   4. 📚 Teach           - Push learnings to projects
-   5. 📊 Statistics      - View detailed stats
-   6. ⚙️  Settings        - Hub configuration
+   2. 📂 Groups          - Organize projects into groups
+   3. 🔍 Scan            - Discover new projects
+   4. 🧠 Learn           - Gather learnings from projects
+   5. 📚 Teach           - Push learnings to projects
+   6. 📊 Statistics      - View detailed stats
+   7. ⚙️  Settings        - Hub configuration
 
    q. Quit
 """)
-        choice = self.get_choice(6, allow_back=False)
+        choice = self.get_choice(7, allow_back=False)
 
         if choice == '1':
             self.projects_menu()
         elif choice == '2':
-            self.scan_menu()
+            self.groups_menu()
         elif choice == '3':
-            self.learn_menu()
+            self.scan_menu()
         elif choice == '4':
-            self.teach_menu()
+            self.learn_menu()
         elif choice == '5':
-            self.stats_menu()
+            self.teach_menu()
         elif choice == '6':
+            self.stats_menu()
+        elif choice == '7':
             self.settings_menu()
 
         return choice
@@ -676,13 +679,11 @@ class SCFHubMenu:
                 elif choice in ('b', 'q'):
                     return
             else:
-                # List projects
-                for i, proj in enumerate(projects[:10], 1):
+                # List all projects
+                for i, proj in enumerate(projects, 1):
                     status = "🌟" if proj.get('scf_enabled') else "📁"
-                    print(f"   {i:2}. {status} {proj['name']}")
-
-                if len(projects) > 10:
-                    print(f"       ... and {len(projects) - 10} more")
+                    group = f" [{proj.get('group', '')}]" if proj.get('group') else ""
+                    print(f"   {i:2}. {status} {proj['name']}{group}")
 
                 print(f"""
    ─────────────────────────────────────
@@ -706,6 +707,364 @@ class SCFHubMenu:
                     self.view_project_select(projects)
                 elif choice.isdigit() and 1 <= int(choice) <= len(projects):
                     self.view_project(projects[int(choice) - 1])
+
+    def groups_menu(self):
+        """Groups management menu"""
+        while True:
+            self.clear_screen()
+            registry = self.load_registry()
+            groups = registry.get('groups', {})
+            projects = registry.get('projects', [])
+
+            print(f"""
+╔══════════════════════════════════════════════════════════════╗
+║                    📂 Project Groups                         ║
+╚══════════════════════════════════════════════════════════════╝
+""")
+            if not groups:
+                print("   No groups created yet.\n")
+            else:
+                for name, info in sorted(groups.items()):
+                    member_count = sum(1 for p in projects if p.get('group') == name)
+                    desc = info.get('description', '')
+                    print(f"   📂 {name} ({member_count} projects)")
+                    if desc:
+                        print(f"      └─ {desc}")
+                print()
+
+            # Show ungrouped projects
+            ungrouped = [p for p in projects if not p.get('group')]
+            if ungrouped:
+                print(f"   📁 Ungrouped: {len(ungrouped)} projects\n")
+
+            print("""   ─────────────────────────────────────
+   1. ➕ Create new group
+   2. ✏️  Assign projects to group
+   3. ➖ Remove projects from group
+   4. 🗑️  Delete a group
+   5. 👁️  View group members
+
+   b. Back to main menu
+""")
+            choice = self.get_choice(5)
+
+            if choice == 'b':
+                return
+            elif choice == '1':
+                self.create_group()
+            elif choice == '2':
+                self.assign_to_group()
+            elif choice == '3':
+                self.remove_from_group()
+            elif choice == '4':
+                self.delete_group()
+            elif choice == '5':
+                self.view_group()
+
+    def create_group(self):
+        """Create a new group"""
+        self.clear_screen()
+        print("""
+╔══════════════════════════════════════════════════════════════╗
+║                    ➕ Create Group                            ║
+╚══════════════════════════════════════════════════════════════╝
+""")
+        name = input("   Group name (e.g., work, personal, client-x): ").strip().lower()
+
+        if not name:
+            return
+
+        # Sanitize name
+        name = name.replace(' ', '-')
+
+        registry = self.load_registry()
+        if 'groups' not in registry:
+            registry['groups'] = {}
+
+        if name in registry['groups']:
+            print(f"\n   ⚠️  Group '{name}' already exists")
+            self.wait_for_enter()
+            return
+
+        desc = input("   Description (optional): ").strip()
+
+        registry['groups'][name] = {
+            'description': desc,
+            'created_at': datetime.now(timezone.utc).isoformat()
+        }
+        self.save_registry(registry)
+
+        print(f"\n   ✅ Created group: {name}")
+        self.wait_for_enter()
+
+    def assign_to_group(self):
+        """Assign projects to a group"""
+        self.clear_screen()
+        registry = self.load_registry()
+        groups = registry.get('groups', {})
+        projects = registry.get('projects', [])
+
+        if not groups:
+            print("\n   ❌ No groups created yet. Create a group first.")
+            self.wait_for_enter()
+            return
+
+        print("""
+╔══════════════════════════════════════════════════════════════╗
+║                    ✏️  Assign to Group                        ║
+╚══════════════════════════════════════════════════════════════╝
+
+   Select a group:
+""")
+        group_list = sorted(groups.keys())
+        for i, name in enumerate(group_list, 1):
+            print(f"   {i}. 📂 {name}")
+
+        print("\n   c. Cancel\n")
+        choice = input("   Selection: ").strip().lower()
+
+        if choice == 'c':
+            return
+
+        if not choice.isdigit() or not (1 <= int(choice) <= len(group_list)):
+            print("   ❌ Invalid selection")
+            self.wait_for_enter()
+            return
+
+        target_group = group_list[int(choice) - 1]
+
+        # Show projects not in this group
+        self.clear_screen()
+        available = [p for p in projects if p.get('group') != target_group]
+
+        if not available:
+            print(f"\n   All projects are already in '{target_group}'")
+            self.wait_for_enter()
+            return
+
+        print(f"""
+╔══════════════════════════════════════════════════════════════╗
+║              Assign to: {target_group:<36} ║
+╚══════════════════════════════════════════════════════════════╝
+
+   Select projects to add to this group:
+""")
+        for i, proj in enumerate(available, 1):
+            status = "🌟" if proj.get('scf_enabled') else "📁"
+            current = f" [{proj.get('group')}]" if proj.get('group') else ""
+            print(f"   {i:2}. {status} {proj['name']}{current}")
+
+        print(f"""
+   ─────────────────────────────────────
+   Enter numbers (e.g., 1,3,5 or 1-5)
+   'a' to add all, 'c' to cancel
+""")
+        sel = input("   Selection: ").strip().lower()
+
+        if sel == 'c':
+            return
+
+        if sel == 'a':
+            selected_indices = list(range(len(available)))
+        else:
+            try:
+                selected_indices = self._parse_selection(sel, len(available))
+            except:
+                print("   ❌ Invalid selection")
+                self.wait_for_enter()
+                return
+
+        # Update projects
+        count = 0
+        for idx in selected_indices:
+            proj_name = available[idx]['name']
+            for p in registry['projects']:
+                if p['name'] == proj_name:
+                    p['group'] = target_group
+                    count += 1
+                    break
+
+        self.save_registry(registry)
+        print(f"\n   ✅ Added {count} projects to '{target_group}'")
+        self.wait_for_enter()
+
+    def remove_from_group(self):
+        """Remove projects from their group"""
+        self.clear_screen()
+        registry = self.load_registry()
+        projects = registry.get('projects', [])
+
+        # Get projects that have a group
+        grouped = [p for p in projects if p.get('group')]
+
+        if not grouped:
+            print("\n   No projects are assigned to groups.")
+            self.wait_for_enter()
+            return
+
+        print("""
+╔══════════════════════════════════════════════════════════════╗
+║                    ➖ Remove from Group                       ║
+╚══════════════════════════════════════════════════════════════╝
+
+   Select projects to ungroup:
+""")
+        for i, proj in enumerate(grouped, 1):
+            status = "🌟" if proj.get('scf_enabled') else "📁"
+            print(f"   {i:2}. {status} {proj['name']} [{proj.get('group')}]")
+
+        print(f"""
+   ─────────────────────────────────────
+   Enter numbers (e.g., 1,3,5 or 1-5)
+   'a' for all, 'c' to cancel
+""")
+        sel = input("   Selection: ").strip().lower()
+
+        if sel == 'c':
+            return
+
+        if sel == 'a':
+            selected_indices = list(range(len(grouped)))
+        else:
+            try:
+                selected_indices = self._parse_selection(sel, len(grouped))
+            except:
+                print("   ❌ Invalid selection")
+                self.wait_for_enter()
+                return
+
+        # Update projects
+        count = 0
+        for idx in selected_indices:
+            proj_name = grouped[idx]['name']
+            for p in registry['projects']:
+                if p['name'] == proj_name:
+                    p.pop('group', None)
+                    count += 1
+                    break
+
+        self.save_registry(registry)
+        print(f"\n   ✅ Removed {count} projects from their groups")
+        self.wait_for_enter()
+
+    def delete_group(self):
+        """Delete a group"""
+        self.clear_screen()
+        registry = self.load_registry()
+        groups = registry.get('groups', {})
+
+        if not groups:
+            print("\n   No groups to delete.")
+            self.wait_for_enter()
+            return
+
+        print("""
+╔══════════════════════════════════════════════════════════════╗
+║                    🗑️  Delete Group                           ║
+╚══════════════════════════════════════════════════════════════╝
+
+   Select a group to delete:
+""")
+        group_list = sorted(groups.keys())
+        projects = registry.get('projects', [])
+
+        for i, name in enumerate(group_list, 1):
+            member_count = sum(1 for p in projects if p.get('group') == name)
+            print(f"   {i}. 📂 {name} ({member_count} projects)")
+
+        print("\n   c. Cancel\n")
+        choice = input("   Selection: ").strip().lower()
+
+        if choice == 'c':
+            return
+
+        if not choice.isdigit() or not (1 <= int(choice) <= len(group_list)):
+            print("   ❌ Invalid selection")
+            self.wait_for_enter()
+            return
+
+        target_group = group_list[int(choice) - 1]
+        member_count = sum(1 for p in projects if p.get('group') == target_group)
+
+        print(f"\n   ⚠️  Delete group '{target_group}'?")
+        if member_count > 0:
+            print(f"   ({member_count} projects will be ungrouped)")
+
+        confirm = input("\n   Confirm? [y/N]: ").strip().lower()
+
+        if confirm == 'y':
+            # Remove group from projects
+            for p in registry['projects']:
+                if p.get('group') == target_group:
+                    p.pop('group', None)
+
+            # Delete group
+            del registry['groups'][target_group]
+            self.save_registry(registry)
+            print(f"\n   ✅ Deleted group: {target_group}")
+        else:
+            print("\n   Cancelled.")
+
+        self.wait_for_enter()
+
+    def view_group(self):
+        """View members of a group"""
+        self.clear_screen()
+        registry = self.load_registry()
+        groups = registry.get('groups', {})
+
+        if not groups:
+            print("\n   No groups created yet.")
+            self.wait_for_enter()
+            return
+
+        print("""
+╔══════════════════════════════════════════════════════════════╗
+║                    👁️  View Group                             ║
+╚══════════════════════════════════════════════════════════════╝
+
+   Select a group:
+""")
+        group_list = sorted(groups.keys())
+        projects = registry.get('projects', [])
+
+        for i, name in enumerate(group_list, 1):
+            member_count = sum(1 for p in projects if p.get('group') == name)
+            print(f"   {i}. 📂 {name} ({member_count} projects)")
+
+        print("\n   c. Cancel\n")
+        choice = input("   Selection: ").strip().lower()
+
+        if choice == 'c':
+            return
+
+        if not choice.isdigit() or not (1 <= int(choice) <= len(group_list)):
+            print("   ❌ Invalid selection")
+            self.wait_for_enter()
+            return
+
+        target_group = group_list[int(choice) - 1]
+        members = [p for p in projects if p.get('group') == target_group]
+
+        self.clear_screen()
+        print(f"""
+╔══════════════════════════════════════════════════════════════╗
+║              📂 {target_group:<44} ║
+╚══════════════════════════════════════════════════════════════╝
+""")
+        if groups[target_group].get('description'):
+            print(f"   {groups[target_group]['description']}\n")
+
+        if not members:
+            print("   No projects in this group.\n")
+        else:
+            print(f"   {len(members)} projects:\n")
+            for proj in members:
+                status = "🌟" if proj.get('scf_enabled') else "📁"
+                print(f"   {status} {proj['name']}")
+                print(f"      {proj['path']}")
+
+        self.wait_for_enter()
 
     def add_project(self):
         """Add projects by scanning a directory"""
