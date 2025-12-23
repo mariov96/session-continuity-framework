@@ -695,14 +695,47 @@ class SCFHubMenu:
                 elif choice in ('b', 'q'):
                     return
             else:
-                # List all projects with size info if available
-                for i, proj in enumerate(projects, 1):
-                    status = "🌟" if proj.get('scf_enabled') else "📁"
-                    group = f" [{proj.get('group', '')}]" if proj.get('group') else ""
-                    size_info = ""
-                    if proj.get('file_count'):
-                        size_info = f" ({proj['file_count']} files)"
-                    print(f"   {i:2}. {status} {proj['name']}{group}{size_info}")
+                # Organize projects by group
+                groups = registry.get('groups', {})
+                grouped = {}
+                ungrouped = []
+
+                for proj in projects:
+                    grp = proj.get('group')
+                    if grp:
+                        if grp not in grouped:
+                            grouped[grp] = []
+                        grouped[grp].append(proj)
+                    else:
+                        ungrouped.append(proj)
+
+                # Display grouped projects first
+                idx = 1
+                project_index_map = {}  # Map display number to project
+
+                for group_name in sorted(grouped.keys()):
+                    group_info = groups.get(group_name, {})
+                    desc = f" - {group_info.get('description', '')}" if group_info.get('description') else ""
+                    print(f"   📂 {group_name}{desc}")
+
+                    for proj in grouped[group_name]:
+                        status = "🌟" if proj.get('scf_enabled') else "📁"
+                        size_info = f" ({proj['file_count']} files)" if proj.get('file_count') else ""
+                        print(f"   {idx:2}. {status} {proj['name']}{size_info}")
+                        project_index_map[idx] = proj
+                        idx += 1
+                    print()  # Space between groups
+
+                # Display ungrouped projects
+                if ungrouped:
+                    if grouped:
+                        print(f"   📁 Ungrouped")
+                    for proj in ungrouped:
+                        status = "🌟" if proj.get('scf_enabled') else "📁"
+                        size_info = f" ({proj['file_count']} files)" if proj.get('file_count') else ""
+                        print(f"   {idx:2}. {status} {proj['name']}{size_info}")
+                        project_index_map[idx] = proj
+                        idx += 1
 
                 print(f"""
    ─────────────────────────────────────
@@ -730,8 +763,10 @@ class SCFHubMenu:
                     self.view_project_select(projects)
                 elif choice == 'l':
                     self.list_projects_verbose(projects)
-                elif choice.isdigit() and 1 <= int(choice) <= len(projects):
-                    self.view_project(projects[int(choice) - 1])
+                elif choice.isdigit():
+                    num = int(choice)
+                    if num in project_index_map:
+                        self.view_project(project_index_map[num])
 
     def list_projects_verbose(self, projects: list):
         """Show detailed view of all projects"""
@@ -1302,8 +1337,13 @@ class SCFHubMenu:
                 print(f"      Frameworks: {', '.join(proj_info['frameworks'][:3])}")
 
         self.save_registry(registry)
-        print(f"\n   ✅ Added {added_count} projects")
-        self.wait_for_enter()
+        print(f"\n   ✅ Added {added_count} project(s)")
+
+        # Offer to add more
+        print("\n   ─────────────────────────────────────")
+        another = input("   Add another project? [y/N]: ").strip().lower()
+        if another == 'y':
+            self.add_project()  # Recursive call to add more
 
     def _is_project_dir(self, path: Path) -> bool:
         """Check if a directory is itself a project (has .git, package.json, etc.)"""
