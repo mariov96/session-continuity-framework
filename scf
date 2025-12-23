@@ -549,6 +549,591 @@ class SCFHubManager:
         return None
 
 
+class SCFHubMenu:
+    """Interactive menu-driven interface for SCF Hub"""
+
+    def __init__(self, hub_path: Path, hub_manager, framework_path: Path):
+        self.hub_path = hub_path
+        self.hub_manager = hub_manager
+        self.framework_path = framework_path
+        self.registry_path = hub_path / '.scf-registry' / 'spoke-projects.json'
+
+    def clear_screen(self):
+        """Clear terminal screen"""
+        import os
+        os.system('clear' if os.name != 'nt' else 'cls')
+
+    def wait_for_enter(self):
+        """Wait for user to press Enter"""
+        input("\n   Press Enter to continue...")
+
+    def get_choice(self, max_choice: int, allow_back: bool = True) -> str:
+        """Get user menu choice"""
+        while True:
+            choice = input("\n   Enter choice: ").strip().lower()
+            if choice == 'q':
+                return 'q'
+            if allow_back and choice in ('b', 'back', '0'):
+                return 'b'
+            if choice.isdigit() and 1 <= int(choice) <= max_choice:
+                return choice
+            print(f"   Please enter 1-{max_choice}" + (", b for back, or q to quit" if allow_back else " or q to quit"))
+
+    def load_registry(self) -> dict:
+        """Load project registry"""
+        if self.registry_path.exists():
+            with open(self.registry_path) as f:
+                return json.load(f)
+        return {"version": "1.0", "projects": []}
+
+    def save_registry(self, registry: dict):
+        """Save project registry"""
+        with open(self.registry_path, 'w') as f:
+            json.dump(registry, f, indent=2)
+
+    def load_profile(self) -> dict:
+        """Load hub profile"""
+        profile_path = self.hub_path / 'hub-profile.json'
+        if profile_path.exists():
+            with open(profile_path) as f:
+                return json.load(f)
+        return {}
+
+    def run(self):
+        """Main menu loop"""
+        while True:
+            action = self.main_menu()
+            if action == 'q':
+                print("\n👋 Goodbye!\n")
+                break
+
+    def main_menu(self) -> str:
+        """Display main hub menu"""
+        self.clear_screen()
+        profile = self.load_profile()
+        registry = self.load_registry()
+        projects = registry.get('projects', [])
+        scf_count = sum(1 for p in projects if p.get('scf_enabled'))
+
+        user_name = profile.get('user', {}).get('name', 'Developer')
+
+        print(f"""
+╔══════════════════════════════════════════════════════════════╗
+║                    📊 SCF Hub Manager                        ║
+╠══════════════════════════════════════════════════════════════╣
+║  👤 {user_name:<20}  📁 {len(projects)} projects ({scf_count} SCF)       ║
+╚══════════════════════════════════════════════════════════════╝
+
+   1. 📁 Projects        - View and manage projects
+   2. 🔍 Scan            - Discover new projects
+   3. 🧠 Learn           - Gather learnings from projects
+   4. 📚 Teach           - Push learnings to projects
+   5. 📊 Statistics      - View detailed stats
+   6. ⚙️  Settings        - Hub configuration
+
+   q. Quit
+""")
+        choice = self.get_choice(6, allow_back=False)
+
+        if choice == '1':
+            self.projects_menu()
+        elif choice == '2':
+            self.scan_menu()
+        elif choice == '3':
+            self.learn_menu()
+        elif choice == '4':
+            self.teach_menu()
+        elif choice == '5':
+            self.stats_menu()
+        elif choice == '6':
+            self.settings_menu()
+
+        return choice
+
+    def projects_menu(self):
+        """Projects management menu"""
+        while True:
+            self.clear_screen()
+            registry = self.load_registry()
+            projects = registry.get('projects', [])
+
+            print(f"""
+╔══════════════════════════════════════════════════════════════╗
+║                    📁 Projects ({len(projects)})                          ║
+╚══════════════════════════════════════════════════════════════╝
+""")
+            if not projects:
+                print("   No projects registered yet.\n")
+                print("   1. ➕ Add a project")
+                print("   2. 🔍 Scan for projects")
+                print("\n   b. Back to main menu")
+
+                choice = self.get_choice(2)
+                if choice == '1':
+                    self.add_project()
+                elif choice == '2':
+                    self.scan_menu()
+                elif choice in ('b', 'q'):
+                    return
+            else:
+                # List projects
+                for i, proj in enumerate(projects[:10], 1):
+                    status = "🌟" if proj.get('scf_enabled') else "📁"
+                    print(f"   {i:2}. {status} {proj['name']}")
+
+                if len(projects) > 10:
+                    print(f"       ... and {len(projects) - 10} more")
+
+                print(f"""
+   ─────────────────────────────────────
+   a. ➕ Add project
+   r. ➖ Remove project
+   v. 👁️  View project details
+
+   b. Back to main menu
+""")
+                choice = input("   Enter choice (number or letter): ").strip().lower()
+
+                if choice == 'b':
+                    return
+                elif choice == 'q':
+                    return
+                elif choice == 'a':
+                    self.add_project()
+                elif choice == 'r':
+                    self.remove_project(projects)
+                elif choice == 'v':
+                    self.view_project_select(projects)
+                elif choice.isdigit() and 1 <= int(choice) <= len(projects):
+                    self.view_project(projects[int(choice) - 1])
+
+    def add_project(self):
+        """Add a project interactively"""
+        self.clear_screen()
+        print("""
+╔══════════════════════════════════════════════════════════════╗
+║                    ➕ Add Project                             ║
+╚══════════════════════════════════════════════════════════════╝
+""")
+        path_input = input("   Enter project path (or 'c' to cancel): ").strip()
+
+        if path_input.lower() == 'c':
+            return
+
+        proj_path = Path(path_input).expanduser().resolve()
+
+        if not proj_path.exists():
+            print(f"\n   ❌ Path not found: {proj_path}")
+            self.wait_for_enter()
+            return
+
+        # Load registry
+        registry = self.load_registry()
+        existing = {p['path'] for p in registry.get('projects', [])}
+
+        if str(proj_path) in existing:
+            print(f"\n   ⚠️  Project already registered: {proj_path.name}")
+            self.wait_for_enter()
+            return
+
+        # Detect project info
+        is_scf = (proj_path / '.scf').exists() or (proj_path / 'buildstate.json').exists()
+
+        proj_info = {
+            'name': proj_path.name,
+            'path': str(proj_path),
+            'type': 'unknown',
+            'scf_enabled': is_scf,
+            'added_at': datetime.now(timezone.utc).isoformat(),
+            'last_sync': None
+        }
+
+        # Read SCF details if available
+        if is_scf:
+            for bs_path in [proj_path / '.scf' / 'BUILDSTATE.json', proj_path / 'buildstate.json']:
+                if bs_path.exists():
+                    try:
+                        with open(bs_path) as f:
+                            data = json.load(f)
+                        proj_info['type'] = data.get('project', {}).get('type', 'unknown')
+
+                        # Update spoke's hub_path
+                        if '_scf_metadata' in data:
+                            data['_scf_metadata']['hub_path'] = str(self.hub_path)
+                            with open(bs_path, 'w') as f:
+                                json.dump(data, f, indent=2)
+                        break
+                    except:
+                        pass
+
+        registry['projects'].append(proj_info)
+        self.save_registry(registry)
+
+        status = "🌟 SCF-enabled" if is_scf else "📁 Regular"
+        print(f"\n   ✅ Added: {proj_path.name} ({status})")
+        self.wait_for_enter()
+
+    def remove_project(self, projects: list):
+        """Remove a project interactively"""
+        print("\n   Enter project number to remove (or 'c' to cancel): ", end="")
+        choice = input().strip()
+
+        if choice.lower() == 'c':
+            return
+
+        if not choice.isdigit() or not (1 <= int(choice) <= len(projects)):
+            print("   ❌ Invalid selection")
+            self.wait_for_enter()
+            return
+
+        proj = projects[int(choice) - 1]
+        confirm = input(f"\n   Remove '{proj['name']}'? [y/N]: ").strip().lower()
+
+        if confirm == 'y':
+            registry = self.load_registry()
+            registry['projects'] = [p for p in registry['projects'] if p['name'] != proj['name']]
+            self.save_registry(registry)
+            print(f"\n   ✅ Removed: {proj['name']}")
+        else:
+            print("\n   Cancelled.")
+
+        self.wait_for_enter()
+
+    def view_project_select(self, projects: list):
+        """Select a project to view"""
+        print("\n   Enter project number to view (or 'c' to cancel): ", end="")
+        choice = input().strip()
+
+        if choice.lower() == 'c':
+            return
+
+        if choice.isdigit() and 1 <= int(choice) <= len(projects):
+            self.view_project(projects[int(choice) - 1])
+
+    def view_project(self, proj: dict):
+        """View detailed project info"""
+        self.clear_screen()
+        status = "🌟 SCF-enabled" if proj.get('scf_enabled') else "📁 Regular"
+
+        print(f"""
+╔══════════════════════════════════════════════════════════════╗
+║  📦 {proj['name']:<52} ║
+╚══════════════════════════════════════════════════════════════╝
+
+   Status:     {status}
+   Path:       {proj['path']}
+   Type:       {proj.get('type', 'unknown')}
+   Added:      {proj.get('added_at', 'unknown').split('T')[0]}
+   Last sync:  {proj.get('last_sync', 'never') if proj.get('last_sync') else 'never'}
+""")
+        # If SCF-enabled, read more details
+        if proj.get('scf_enabled'):
+            proj_path = Path(proj['path'])
+            for bs_path in [proj_path / '.scf' / 'BUILDSTATE.json', proj_path / 'buildstate.json']:
+                if bs_path.exists():
+                    try:
+                        with open(bs_path) as f:
+                            data = json.load(f)
+
+                        if '_project_foundation' in data:
+                            foundation = data['_project_foundation']
+                            if foundation.get('identity'):
+                                print(f"   Foundation: {foundation['identity'].get('one_liner', 'No description')}")
+
+                        if 'features' in data and data['features']:
+                            print(f"\n   ✨ Features ({len(data['features'])}):")
+                            for feat in data['features'][:5]:
+                                print(f"      • {feat.get('name', 'unnamed')}")
+
+                        if 'decisions' in data and data['decisions']:
+                            print(f"\n   📝 Recent Decisions ({len(data['decisions'])}):")
+                            for dec in data['decisions'][:3]:
+                                print(f"      • {dec.get('decision', 'unnamed')[:50]}")
+
+                        break
+                    except:
+                        pass
+
+        print("""
+   ─────────────────────────────────────
+   1. 🧠 Learn from this project
+   2. 📚 Teach this project
+   3. 🔄 Sync this project
+   4. 📂 Open in terminal
+
+   b. Back
+""")
+        choice = self.get_choice(4)
+
+        if choice == '1':
+            self.learn_from_project(proj)
+        elif choice == '2':
+            self.teach_project(proj)
+        elif choice == '3':
+            self.sync_project(proj)
+        elif choice == '4':
+            import os
+            os.system(f'cd "{proj["path"]}" && $SHELL')
+
+    def learn_from_project(self, proj: dict):
+        """Learn from a specific project"""
+        print(f"\n   🧠 Learning from {proj['name']}...")
+
+        proj_path = Path(proj['path'])
+        signals_path = proj_path / '.scf' / 'spoke-signals.jsonl'
+
+        if not signals_path.exists():
+            signals_path = proj_path / 'spoke-signals.jsonl'
+
+        if signals_path.exists():
+            with open(signals_path) as f:
+                signals = [json.loads(line) for line in f if line.strip()]
+                high_impact = [s for s in signals if s.get('offers')]
+                print(f"   Found {len(high_impact)} high-impact learnings")
+        else:
+            print("   No signals found in this project")
+
+        self.wait_for_enter()
+
+    def teach_project(self, proj: dict):
+        """Teach a specific project"""
+        print(f"\n   📚 Teaching {proj['name']}...")
+
+        proj_path = Path(proj['path'])
+        kb_sync_path = proj_path / '.scf' / 'kb-sync.json'
+
+        if kb_sync_path.exists():
+            try:
+                with open(kb_sync_path) as f:
+                    kb_sync = json.load(f)
+                kb_sync['last_sync_date'] = datetime.now(timezone.utc).isoformat()
+                kb_sync['hub_kb_version'] = datetime.now(timezone.utc).isoformat()
+                with open(kb_sync_path, 'w') as f:
+                    json.dump(kb_sync, f, indent=2)
+                print("   ✅ Updated knowledge sync")
+            except:
+                print("   ❌ Failed to update")
+        else:
+            print("   ⚠️  No kb-sync.json found")
+
+        # Update registry
+        registry = self.load_registry()
+        for p in registry['projects']:
+            if p['name'] == proj['name']:
+                p['last_sync'] = datetime.now(timezone.utc).isoformat()
+        self.save_registry(registry)
+
+        self.wait_for_enter()
+
+    def sync_project(self, proj: dict):
+        """Sync a project"""
+        print(f"\n   🔄 Syncing {proj['name']}...")
+        self.learn_from_project(proj)
+        self.teach_project(proj)
+
+    def scan_menu(self):
+        """Scan for new projects"""
+        self.clear_screen()
+        print("""
+╔══════════════════════════════════════════════════════════════╗
+║                    🔍 Scan for Projects                      ║
+╚══════════════════════════════════════════════════════════════╝
+""")
+        registry_dir = self.hub_path / '.scf-registry'
+        self.hub_manager._discover_existing_projects(self.hub_path, registry_dir)
+        self.wait_for_enter()
+
+    def learn_menu(self):
+        """Learn from all projects"""
+        self.clear_screen()
+        print("""
+╔══════════════════════════════════════════════════════════════╗
+║                    🧠 Learn from Projects                    ║
+╚══════════════════════════════════════════════════════════════╝
+""")
+        registry = self.load_registry()
+        projects = [p for p in registry.get('projects', []) if p.get('scf_enabled')]
+
+        if not projects:
+            print("   No SCF-enabled projects to learn from.")
+            self.wait_for_enter()
+            return
+
+        print(f"   Found {len(projects)} SCF-enabled projects\n")
+
+        learned_count = 0
+        for proj in projects:
+            proj_path = Path(proj['path'])
+            signals_path = proj_path / '.scf' / 'spoke-signals.jsonl'
+
+            if not signals_path.exists():
+                signals_path = proj_path / 'spoke-signals.jsonl'
+
+            if signals_path.exists():
+                print(f"   📖 Reading from {proj['name']}...")
+                with open(signals_path) as f:
+                    signals = [json.loads(line) for line in f if line.strip()]
+                    high_impact = [s for s in signals if s.get('offers')]
+                    if high_impact:
+                        learned_count += len(high_impact)
+                        print(f"      Found {len(high_impact)} learnings")
+
+        print(f"\n   ✅ Gathered {learned_count} total learnings")
+        self.wait_for_enter()
+
+    def teach_menu(self):
+        """Teach all projects"""
+        self.clear_screen()
+        print("""
+╔══════════════════════════════════════════════════════════════╗
+║                    📚 Teach Projects                         ║
+╚══════════════════════════════════════════════════════════════╝
+""")
+        registry = self.load_registry()
+        projects = [p for p in registry.get('projects', []) if p.get('scf_enabled')]
+
+        if not projects:
+            print("   No SCF-enabled projects to teach.")
+            self.wait_for_enter()
+            return
+
+        print(f"   Teaching {len(projects)} SCF-enabled projects\n")
+
+        taught_count = 0
+        for proj in projects:
+            proj_path = Path(proj['path'])
+            print(f"   📝 Updating {proj['name']}...")
+
+            kb_sync_path = proj_path / '.scf' / 'kb-sync.json'
+            if kb_sync_path.exists():
+                try:
+                    with open(kb_sync_path) as f:
+                        kb_sync = json.load(f)
+                    kb_sync['last_sync_date'] = datetime.now(timezone.utc).isoformat()
+                    kb_sync['hub_kb_version'] = datetime.now(timezone.utc).isoformat()
+                    with open(kb_sync_path, 'w') as f:
+                        json.dump(kb_sync, f, indent=2)
+                    taught_count += 1
+                except:
+                    pass
+
+            proj['last_sync'] = datetime.now(timezone.utc).isoformat()
+
+        self.save_registry(registry)
+        print(f"\n   ✅ Updated {taught_count} projects")
+        self.wait_for_enter()
+
+    def stats_menu(self):
+        """Show detailed statistics"""
+        self.clear_screen()
+        registry = self.load_registry()
+        projects = registry.get('projects', [])
+        scf_enabled = [p for p in projects if p.get('scf_enabled')]
+        regular = [p for p in projects if not p.get('scf_enabled')]
+
+        never_synced = [p['name'] for p in scf_enabled if not p.get('last_sync')]
+
+        learnings_dir = self.hub_path / 'learnings'
+        learning_count = len(list(learnings_dir.glob('*.json'))) if learnings_dir.exists() else 0
+
+        print(f"""
+╔══════════════════════════════════════════════════════════════╗
+║                    📊 Hub Statistics                         ║
+╚══════════════════════════════════════════════════════════════╝
+
+   📁 Projects
+   ─────────────────────────────────────
+   Total registered:    {len(projects)}
+   SCF-enabled:         {len(scf_enabled)}
+   Regular:             {len(regular)}
+   Never synced:        {len(never_synced)}
+
+   🧠 Learnings
+   ─────────────────────────────────────
+   Patterns stored:     {learning_count}
+
+   💡 Recommendations
+   ─────────────────────────────────────""")
+
+        if regular:
+            print(f"   • {len(regular)} projects could be SCF-enabled")
+        if never_synced:
+            print(f"   • {len(never_synced)} projects need initial sync")
+        if not scf_enabled:
+            print(f"   • Run scan to discover more projects")
+        if learning_count == 0:
+            print(f"   • Run learn to gather patterns from projects")
+
+        print("\n   b. Back")
+        self.get_choice(0)
+
+    def settings_menu(self):
+        """Hub settings menu"""
+        while True:
+            self.clear_screen()
+            profile = self.load_profile()
+
+            print(f"""
+╔══════════════════════════════════════════════════════════════╗
+║                    ⚙️  Hub Settings                           ║
+╚══════════════════════════════════════════════════════════════╝
+
+   Current Settings:
+   ─────────────────────────────────────
+   👤 Name:      {profile.get('user', {}).get('name', 'Not set')}
+   💼 Focus:     {profile.get('work_style', {}).get('description', 'Not set')}
+   🤖 AI Style:  {profile.get('work_style', {}).get('ai_collaboration_style', 'collaborative')}
+   📍 Hub Path:  {self.hub_path}
+
+   1. ✏️  Edit name
+   2. ✏️  Edit focus
+   3. ✏️  Edit AI collaboration style
+   4. 📂 Open hub-profile.json
+
+   b. Back
+""")
+            choice = self.get_choice(4)
+
+            if choice == 'b':
+                return
+            elif choice == '1':
+                new_name = input("\n   Enter new name: ").strip()
+                if new_name:
+                    profile['user']['name'] = new_name
+                    self._save_profile(profile)
+                    print("   ✅ Updated!")
+                    self.wait_for_enter()
+            elif choice == '2':
+                new_focus = input("\n   Enter your focus/role: ").strip()
+                if new_focus:
+                    profile['work_style']['description'] = new_focus
+                    self._save_profile(profile)
+                    print("   ✅ Updated!")
+                    self.wait_for_enter()
+            elif choice == '3':
+                print("\n   AI Collaboration Style:")
+                print("   1. Autonomous - AI takes initiative")
+                print("   2. Collaborative - Discuss first")
+                print("   3. Supervised - Always ask")
+                style_choice = input("   > ").strip()
+                styles = {'1': 'autonomous', '2': 'collaborative', '3': 'supervised'}
+                if style_choice in styles:
+                    profile['work_style']['ai_collaboration_style'] = styles[style_choice]
+                    self._save_profile(profile)
+                    print("   ✅ Updated!")
+                    self.wait_for_enter()
+            elif choice == '4':
+                import os
+                editor = os.environ.get('EDITOR', 'nano')
+                os.system(f'{editor} "{self.hub_path}/hub-profile.json"')
+
+    def _save_profile(self, profile: dict):
+        """Save hub profile"""
+        profile_path = self.hub_path / 'hub-profile.json'
+        with open(profile_path, 'w') as f:
+            json.dump(profile, f, indent=2)
+
+
 class SCFCommands:
     """Main SCF command implementations"""
 
@@ -698,7 +1283,18 @@ class SCFCommands:
         # Find hub for most operations
         hub_path = hub_manager.find_hub()
 
-        if args.action == "help" or args.action is None:
+        # Launch interactive mode if no action or explicit --interactive
+        if args.action is None or (hasattr(args, 'interactive') and args.interactive):
+            if not hub_path:
+                print("❌ No hub found. Let's create one!\n")
+                hub_manager.create_hub(Path("~/scf-hub").expanduser())
+                hub_path = hub_manager.find_hub()
+
+            menu = SCFHubMenu(hub_path, hub_manager, framework_path)
+            menu.run()
+            return
+
+        if args.action == "help":
             SCFCommands._hub_help()
 
         elif args.action == "create":
