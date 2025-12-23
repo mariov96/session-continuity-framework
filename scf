@@ -1101,7 +1101,8 @@ class SCFHubMenu:
             elif choice.isdigit() and 1 <= int(choice) <= len(common_paths):
                 scan_path = common_paths[int(choice) - 1]
             else:
-                scan_path = Path(choice).expanduser().resolve()
+                # Convert Windows backslashes to forward slashes
+                scan_path = Path(choice.replace('\\', '/')).expanduser().resolve()
         else:
             print("   Enter a directory to scan for projects.")
             print("   Examples: ~/projects, ~/code, ~/work\n")
@@ -1110,7 +1111,8 @@ class SCFHubMenu:
             if path_input.lower() == 'c':
                 return
 
-            scan_path = Path(path_input).expanduser().resolve()
+            # Convert Windows backslashes to forward slashes
+            scan_path = Path(path_input.replace('\\', '/')).expanduser().resolve()
 
         if not scan_path.exists() or not scan_path.is_dir():
             print(f"\n   ❌ Directory not found: {scan_path}")
