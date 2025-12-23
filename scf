@@ -857,25 +857,17 @@ class SCFHubMenu:
             current = f" [{proj.get('group')}]" if proj.get('group') else ""
             print(f"   {i:2}. {status} {proj['name']}{current}")
 
-        print(f"""
-   ─────────────────────────────────────
-   Enter numbers (e.g., 1,3,5 or 1-5)
-   'a' to add all, 'c' to cancel
-""")
-        sel = input("   Selection: ").strip().lower()
+        print(f"\n   Selection (1,3,5 or 1-{len(available)}) [all]: ", end="")
+        sel = input().strip().lower()
 
         if sel == 'c':
             return
 
-        if sel == 'a':
-            selected_indices = list(range(len(available)))
-        else:
-            try:
-                selected_indices = self._parse_selection(sel, len(available))
-            except:
-                print("   ❌ Invalid selection")
-                self.wait_for_enter()
-                return
+        selected_indices = self._parse_selection(sel, len(available))
+        if not selected_indices:
+            print("   ❌ No valid selection")
+            self.wait_for_enter()
+            return
 
         # Update projects
         count = 0
@@ -916,25 +908,17 @@ class SCFHubMenu:
             status = "🌟" if proj.get('scf_enabled') else "📁"
             print(f"   {i:2}. {status} {proj['name']} [{proj.get('group')}]")
 
-        print(f"""
-   ─────────────────────────────────────
-   Enter numbers (e.g., 1,3,5 or 1-5)
-   'a' for all, 'c' to cancel
-""")
-        sel = input("   Selection: ").strip().lower()
+        print(f"\n   Selection (1,3,5 or 1-{len(grouped)}) [all]: ", end="")
+        sel = input().strip().lower()
 
         if sel == 'c':
             return
 
-        if sel == 'a':
-            selected_indices = list(range(len(grouped)))
-        else:
-            try:
-                selected_indices = self._parse_selection(sel, len(grouped))
-            except:
-                print("   ❌ Invalid selection")
-                self.wait_for_enter()
-                return
+        selected_indices = self._parse_selection(sel, len(grouped))
+        if not selected_indices:
+            print("   ❌ No valid selection")
+            self.wait_for_enter()
+            return
 
         # Update projects
         count = 0
@@ -1168,31 +1152,20 @@ class SCFHubMenu:
             if proj.get('description'):
                 print(f"       └─ {proj['description'][:50]}")
 
-        print(f"""
-   ─────────────────────────────────────
-   Enter numbers to add (e.g., 1,3,5 or 1-5)
-   'a' to add all, 'c' to cancel
-""")
-        choice = input("   Selection: ").strip().lower()
+        print(f"\n   Selection (1,3,5 or 1-{len(new_projects)}) [all]: ", end="")
+        choice = input().strip().lower()
 
         if choice == 'c':
             return
 
-        # Parse selection
-        selected = []
-        if choice == 'a':
-            selected = new_projects
-        else:
-            try:
-                indices = self._parse_selection(choice, len(new_projects))
-                selected = [new_projects[i] for i in indices]
-            except:
-                print("\n   ❌ Invalid selection")
-                self.wait_for_enter()
-                return
-
-        if not selected:
+        # Parse selection (empty = all)
+        indices = self._parse_selection(choice, len(new_projects))
+        if not indices:
+            print("\n   ❌ No valid selection")
+            self.wait_for_enter()
             return
+
+        selected = [new_projects[i] for i in indices]
 
         # Add selected projects with full profile
         added_count = 0
@@ -1308,17 +1281,40 @@ class SCFHubMenu:
 
         return sorted(discovered, key=lambda x: (not x['scf_enabled'], x['name'].lower()))
 
-    def _parse_selection(self, selection: str, max_val: int) -> list:
-        """Parse selection like '1,3,5' or '1-5' or '1,3-5'"""
+    def _parse_selection(self, selection: str, max_val: int, default_all: bool = True) -> list:
+        """Parse selection like '1,3,5' or '1-5' or '1,3-5' or 'a' for all
+
+        Args:
+            selection: User input string
+            max_val: Maximum valid selection number
+            default_all: If True, empty input returns all indices
+        """
+        selection = selection.strip().lower()
+
+        # Handle empty input - default to all if enabled
+        if not selection:
+            if default_all:
+                return list(range(max_val))
+            return []
+
+        # Handle 'a' or 'all' for all
+        if selection in ('a', 'all'):
+            return list(range(max_val))
+
         indices = set()
         parts = selection.replace(' ', '').split(',')
 
         for part in parts:
+            if not part:
+                continue
             if '-' in part:
-                start, end = part.split('-', 1)
-                for i in range(int(start), int(end) + 1):
-                    if 1 <= i <= max_val:
-                        indices.add(i - 1)
+                try:
+                    start, end = part.split('-', 1)
+                    for i in range(int(start), int(end) + 1):
+                        if 1 <= i <= max_val:
+                            indices.add(i - 1)
+                except ValueError:
+                    continue
             elif part.isdigit():
                 i = int(part)
                 if 1 <= i <= max_val:
@@ -1382,15 +1378,13 @@ class SCFHubMenu:
             print(f"   {i:2}. {status} {proj['name']}")
             print(f"       {proj.get('path', 'unknown')}")
 
-        print(f"\n   Enter selection (1,3,5 or 1-{len(projects)} or 'a' for all)")
-        print("   Or 'c' to cancel\n")
-
-        choice = input("   Selection: ").strip().lower()
+        print(f"\n   Selection (1,3,5 or 1-{len(projects)}) [all]: ", end="")
+        choice = input().strip().lower()
 
         if choice == 'c':
             return
 
-        indices = self._parse_multi_select(choice, len(projects))
+        indices = self._parse_selection(choice, len(projects))
         if not indices:
             print("   ❌ No valid selection")
             self.wait_for_enter()
@@ -1883,14 +1877,12 @@ class SCFHubMenu:
         for i, proj in enumerate(projects, 1):
             print(f"   {i}. {proj['name']} ({proj.get('path', 'unknown')})")
 
-        print(f"\n   Select projects to enable (1,3,5 or 1-{len(projects)} or 'a' for all)")
-        print("   Or 'b' to go back\n")
-
-        selection = input("   > ").strip().lower()
-        if selection == 'b':
+        print(f"\n   Selection (1,3,5 or 1-{len(projects)}) [all]: ", end="")
+        selection = input().strip().lower()
+        if selection in ('b', 'c'):
             return
 
-        indices = self._parse_multi_select(selection, len(projects))
+        indices = self._parse_selection(selection, len(projects))
         if not indices:
             print("   No valid selection")
             self.wait_for_enter()
@@ -1943,14 +1935,12 @@ class SCFHubMenu:
         for i, proj in enumerate(projects, 1):
             print(f"   {i}. {proj['name']}")
 
-        print(f"\n   Select projects to sync (1,3,5 or 1-{len(projects)} or 'a' for all)")
-        print("   Or 'b' to go back\n")
-
-        selection = input("   > ").strip().lower()
-        if selection == 'b':
+        print(f"\n   Selection (1,3,5 or 1-{len(projects)}) [all]: ", end="")
+        selection = input().strip().lower()
+        if selection in ('b', 'c'):
             return
 
-        indices = self._parse_multi_select(selection, len(projects))
+        indices = self._parse_selection(selection, len(projects))
         if not indices:
             print("   No valid selection")
             self.wait_for_enter()
@@ -2000,14 +1990,12 @@ class SCFHubMenu:
         for i, proj in enumerate(projects, 1):
             print(f"   {i}. {proj['name']}")
 
-        print(f"\n   Select projects to learn from (1,3,5 or 1-{len(projects)} or 'a' for all)")
-        print("   Or 'b' to go back\n")
-
-        selection = input("   > ").strip().lower()
-        if selection == 'b':
+        print(f"\n   Selection (1,3,5 or 1-{len(projects)}) [all]: ", end="")
+        selection = input().strip().lower()
+        if selection in ('b', 'c'):
             return
 
-        indices = self._parse_multi_select(selection, len(projects))
+        indices = self._parse_selection(selection, len(projects))
         if not indices:
             print("   No valid selection")
             self.wait_for_enter()
