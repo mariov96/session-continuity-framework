@@ -1233,6 +1233,7 @@ class SCFHubMenu:
             path / '.git',
             path / '.scf',
             path / 'buildstate.json',
+            path / 'BUILDSTATE.json',
             path / 'package.json',
             path / 'pyproject.toml',
             path / 'setup.py',
@@ -1245,7 +1246,9 @@ class SCFHubMenu:
 
     def _get_project_info(self, item: Path) -> dict:
         """Get project info for a single project directory"""
-        is_scf = (item / '.scf').exists() or (item / 'buildstate.json').exists()
+        is_scf = ((item / '.scf').exists() or
+                  (item / 'buildstate.json').exists() or
+                  (item / 'BUILDSTATE.json').exists())
 
         proj_info = {
             'name': item.name,
@@ -1257,7 +1260,11 @@ class SCFHubMenu:
 
         # Read SCF details if available
         if is_scf:
-            for bs_path in [item / '.scf' / 'BUILDSTATE.json', item / 'buildstate.json']:
+            # Check both uppercase and lowercase variants (Linux is case-sensitive)
+            for bs_path in [item / '.scf' / 'BUILDSTATE.json',
+                           item / '.scf' / 'buildstate.json',
+                           item / 'BUILDSTATE.json',
+                           item / 'buildstate.json']:
                 if bs_path.exists():
                     try:
                         with open(bs_path) as f:
