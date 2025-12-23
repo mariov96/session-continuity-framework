@@ -1,6 +1,6 @@
 import json
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 
 class SCFAnalytics:
     """
@@ -60,7 +60,7 @@ class SCFAnalytics:
         """Returns the default structure for the scf_analytics data."""
         return {
             "metadata": {
-                "since": datetime.utcnow().isoformat(),
+                "since": datetime.now(timezone.utc).isoformat(),
                 "version": "1.0"
             },
             "sessions": {

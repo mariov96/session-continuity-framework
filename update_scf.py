@@ -27,7 +27,7 @@ import shutil
 import argparse
 import subprocess
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List, Tuple
 
 # Import SCF components
@@ -66,7 +66,7 @@ class SCFProjectUpdater:
                       skip_inheritance: bool = False,
                       skip_rebalance: bool = False,
                       auto_commit: bool = False) -> bool:
-       """Update SCF for a specific project"""
+        """Update SCF for a specific project"""
         
         print(f"🔄 Updating SCF for project: {project_path.name}")
         print(f"📁 Project path: {project_path.absolute()}")
@@ -316,7 +316,7 @@ class SCFProjectUpdater:
 
             # Also update the sync date and version
             if '_scf_metadata' in project_data and '_scf_metadata' in template_data:
-                project_data['_scf_metadata']['last_sync_date'] = datetime.utcnow().isoformat()
+                project_data['_scf_metadata']['last_sync_date'] = datetime.now(timezone.utc).isoformat()
                 new_version = template_data['_scf_metadata'].get('template_version')
                 if new_version:
                     project_data['_scf_metadata']['template_version'] = new_version

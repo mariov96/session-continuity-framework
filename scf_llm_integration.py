@@ -35,12 +35,19 @@ Usage:
 
 import json
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Tuple, Union
 from dataclasses import dataclass, field
 from enum import Enum
 from scf_analytics import SCFAnalytics
+
+try:
+    from scf_enhanced_overview import generate_enhanced_overview
+except ImportError:
+    # Fallback if enhanced overview is not available
+    def generate_enhanced_overview(project_path):
+        return "## SCF Overview\n\nEnhanced tracking not available."
 
 class LLMType(Enum):
     """Supported LLM types with specific formatting needs"""
@@ -229,13 +236,23 @@ class SCFLLMIntegrator:
         """Generate concise buildstate summary optimized for session type"""
         combined = buildstate_data['combined']
         
-        # Base project info
-        project_info = combined.get('project', {})
-        project_name = project_info.get('name', 'Unknown Project')
-        project_phase = project_info.get('phase', 'unknown')
-        project_type = project_info.get('type', 'unknown')
-        
-        summary_parts = [f"📋 **{project_name}** ({project_type}, {project_phase} phase)"]
+        # Start with enhanced SCF overview if available (uses buildstate._scf_metadata)
+        try:
+            enhanced_overview = generate_enhanced_overview(self.project_path)
+            # If we got a valid enhanced overview, use it as the header
+            if enhanced_overview and "Enhanced tracking not available" not in enhanced_overview:
+                summary_parts = [enhanced_overview]
+                summary_parts.append("\n---\n")  # Separator
+            else:
+                raise ImportError("Enhanced overview not available")
+        except (ImportError, Exception):
+            # Fallback to basic project info if enhanced overview fails
+            project_info = combined.get('project', {})
+            project_name = project_info.get('name', 'Unknown Project')
+            project_phase = project_info.get('phase', 'unknown')
+            project_type = project_info.get('type', 'unknown')
+            
+            summary_parts = [f"📋 **{project_name}** ({project_type}, {project_phase} phase)"]
         
         # Session-type specific summaries
         if session_type == SessionType.IMPLEMENTATION:
@@ -798,7 +815,7 @@ Ready to proceed. What would you like to work on?"""
 
             log_entry = {
                 "session_id": session_id,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "summary": summary,
                 "commit_hash": commit_hash
             }

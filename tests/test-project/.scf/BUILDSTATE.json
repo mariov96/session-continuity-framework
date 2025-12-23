@@ -1,0 +1,62 @@
+{
+  "_scf_metadata": {
+    "template_version": "v2.1",
+    "source_repo": "https://github.com/mariov96/session-continuity-framework",
+    "hub_path": "~/projects/session-continuity-framework",
+    "last_sync_date": "2025-11-30T00:00:00Z",
+    "last_rebalance_date": "2025-11-30T00:00:00Z",
+    "days_since_rebalance": 0,
+    "registry_entry": "~/projects/session-continuity-framework/.scf-registry/spokes/test-project.json"
+  },
+  "_session_state": {
+    "last_modified_by": "Test System",
+    "last_modified_at": "2025-11-30T00:00:00Z",
+    "requires_review": false,
+    "review_reason": null,
+    "session_count": 0
+  },
+  "_hub_notes": {
+    "timestamp": "2025-11-30T00:00:00Z",
+    "status": "test_project",
+    "offers": [],
+    "requests": [],
+    "flags": {
+      "needs_rebalance": false,
+      "has_high_impact_learnings": false,
+      "needs_template_update": false
+    }
+  },
+  "project": {
+    "name": "SCF Internal Test Project",
+    "version": "1.0.0",
+    "type": "test_project",
+    "description": "Internal testing project for SCF script validation"
+  },
+  "stack": ["Python", "pytest"],
+  "features": [
+    {
+      "id": "test-feature",
+      "name": "Test Feature",
+      "status": "active",
+      "description": "For testing SCF operations"
+    }
+  ],
+  "decisions": [
+    {
+      "date": "2025-11-30",
+      "impact": 8,
+      "decision": "Use this project for internal SCF testing only",
+      "rationale": "Need isolated environment for script validation",
+      "context": "Refactoring initiative"
+    }
+  ],
+  "next_steps": [
+    "Add test scenarios",
+    "Validate recon.py detection",
+    "Test teach.py initialization"
+  ],
+  "ai_rules": {
+    "purpose": "Internal testing - not a real project",
+    "note": "This project should NOT appear in spoke directory listings"
+  }
+}

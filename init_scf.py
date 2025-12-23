@@ -26,7 +26,7 @@ import shutil
 import argparse
 import subprocess
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Dict, Any
 
 # Import SCF components
@@ -68,8 +68,8 @@ class SCFProjectInitializer:
             return False
         
         # Check if already SCF-enabled
-        buildstate_json = project_path / "buildstate.json"
-        buildstate_md = project_path / "buildstate.md"
+        buildstate_json = project_path / ".scf" / "buildstate.json"
+        buildstate_md = project_path / ".scf" / "buildstate.md"
         
         if (buildstate_json.exists() or buildstate_md.exists()) and not force:
             print(f"⚠️  Project already has SCF files:")
@@ -144,9 +144,13 @@ class SCFProjectInitializer:
             return False
             
         # Copy templates
-        target_json = project_path / "buildstate.json"
-        target_md = project_path / "buildstate.md"
+        target_json = project_path / ".scf" / "buildstate.json"
+        target_md = project_path / ".scf" / "buildstate.md"
         
+        # Ensure .scf directory exists
+        scf_dir = project_path / ".scf"
+        if not self.dry_run:
+            scf_dir.mkdir(parents=True, exist_ok=True)
         if not self.dry_run:
             shutil.copy2(json_template, target_json)
             shutil.copy2(md_template, target_md)
@@ -161,7 +165,7 @@ class SCFProjectInitializer:
         
         print(f"🔧 Step 2: Customizing templates for {project_path.name}")
         
-        buildstate_json_path = project_path / "buildstate.json"
+        buildstate_json_path = project_path / ".scf" / "buildstate.json"
         
         if self.dry_run:
             print(f"   🔍 Would customize {buildstate_json_path}")
@@ -178,7 +182,7 @@ class SCFProjectInitializer:
 
             # Update SCF metadata
             if '_scf_metadata' in data:
-                data['_scf_metadata']['last_sync_date'] = datetime.utcnow().isoformat()
+                data['_scf_metadata']['last_sync_date'] = datetime.now(timezone.utc).isoformat()
             
             # Add initialization log entry
             if 'change_log' not in data:
@@ -257,7 +261,7 @@ class SCFProjectInitializer:
         print(f"🔗 Step 4: Setting up AGENTS.md ecosystem compatibility")
         
         agents_md_path = project_path / "AGENTS.md"
-        buildstate_md_path = project_path / "buildstate.md"
+        buildstate_md_path = project_path / ".scf" / "buildstate.md"
         
         if self.dry_run:
             print(f"   🔍 Would create AGENTS.md symlink: {agents_md_path}")
@@ -271,7 +275,7 @@ class SCFProjectInitializer:
                     agents_md_path.unlink()
                     
                 # Create relative symlink
-                agents_md_path.symlink_to("buildstate.md")
+                agents_md_path.symlink_to(".scf/buildstate.md")
                 print(f"   ✅ Created AGENTS.md → buildstate.md symlink")
                 
             else:

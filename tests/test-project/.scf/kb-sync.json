@@ -1,0 +1,11 @@
+{
+  "hub_kb_version": "2025-11-30T00:00:00Z",
+  "spoke_kb_version": "2025-11-30T00:00:00Z",
+  "last_sync_date": "2025-11-30T00:00:00Z",
+  "sync_method": "teach.py",
+  "learnings_received": [],
+  "_instructions": {
+    "for_llms": "Read this file to check if hub has new learnings. Compare hub_kb_version with spoke_kb_version. If hub is newer or last_sync_date is >30 days ago, prompt user to run teach.py --update",
+    "updating": "This file is updated by teach.py. Don't modify manually."
+  }
+}
