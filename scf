@@ -1117,9 +1117,16 @@ class SCFHubMenu:
             self.wait_for_enter()
             return
 
-        # Scan for projects
-        print(f"\n   🔍 Scanning {scan_path}...")
-        discovered = self._quick_scan(scan_path)
+        # Check if the path itself is a project (not a parent folder of projects)
+        is_project = self._is_project_dir(scan_path)
+
+        if is_project:
+            # User entered a specific project path - add it directly
+            discovered = [self._get_project_info(scan_path)]
+        else:
+            # Scan for projects inside this directory
+            print(f"\n   🔍 Scanning {scan_path}...")
+            discovered = self._quick_scan(scan_path)
 
         if not discovered:
             print("\n   No projects found in this directory.")
@@ -1218,6 +1225,55 @@ class SCFHubMenu:
         print(f"\n   ✅ Added {added_count} projects")
         self.wait_for_enter()
 
+    def _is_project_dir(self, path: Path) -> bool:
+        """Check if a directory is itself a project (has .git, package.json, etc.)"""
+        indicators = [
+            path / '.git',
+            path / '.scf',
+            path / 'buildstate.json',
+            path / 'package.json',
+            path / 'pyproject.toml',
+            path / 'setup.py',
+            path / 'Cargo.toml',
+            path / 'go.mod',
+            path / 'pom.xml',
+            path / 'Makefile',
+        ]
+        return any(ind.exists() for ind in indicators)
+
+    def _get_project_info(self, item: Path) -> dict:
+        """Get project info for a single project directory"""
+        is_scf = (item / '.scf').exists() or (item / 'buildstate.json').exists()
+
+        proj_info = {
+            'name': item.name,
+            'path': str(item.resolve()),
+            'scf_enabled': is_scf,
+            'description': None,
+            'project_type': None
+        }
+
+        # Read SCF details if available
+        if is_scf:
+            for bs_path in [item / '.scf' / 'BUILDSTATE.json', item / 'buildstate.json']:
+                if bs_path.exists():
+                    try:
+                        with open(bs_path) as f:
+                            data = json.load(f)
+                        if '_project_foundation' in data:
+                            foundation = data['_project_foundation']
+                            if foundation.get('identity'):
+                                proj_info['description'] = foundation['identity'].get('one_liner')
+                                proj_info['project_type'] = foundation['identity'].get('type')
+                        elif 'project' in data:
+                            proj_info['description'] = data['project'].get('description')
+                            proj_info['project_type'] = data['project'].get('type')
+                        break
+                    except:
+                        pass
+
+        return proj_info
+
     def _quick_scan(self, scan_path: Path) -> list:
         """Quick scan a directory for projects"""
         discovered = []
@@ -1227,41 +1283,8 @@ class SCFHubMenu:
                 if not item.is_dir() or item.name.startswith('.'):
                     continue
 
-                is_git = (item / '.git').exists()
-                is_scf = (item / '.scf').exists() or (item / 'buildstate.json').exists()
-                has_package = (item / 'package.json').exists()
-                has_pyproject = (item / 'pyproject.toml').exists() or (item / 'setup.py').exists()
-                has_cargo = (item / 'Cargo.toml').exists()
-
-                if is_git or is_scf or has_package or has_pyproject or has_cargo:
-                    proj_info = {
-                        'name': item.name,
-                        'path': str(item.resolve()),
-                        'scf_enabled': is_scf,
-                        'description': None,
-                        'project_type': None
-                    }
-
-                    # Read SCF details if available
-                    if is_scf:
-                        for bs_path in [item / '.scf' / 'BUILDSTATE.json', item / 'buildstate.json']:
-                            if bs_path.exists():
-                                try:
-                                    with open(bs_path) as f:
-                                        data = json.load(f)
-                                    if '_project_foundation' in data:
-                                        foundation = data['_project_foundation']
-                                        if foundation.get('identity'):
-                                            proj_info['description'] = foundation['identity'].get('one_liner')
-                                            proj_info['project_type'] = foundation['identity'].get('type')
-                                    elif 'project' in data:
-                                        proj_info['description'] = data['project'].get('description')
-                                        proj_info['project_type'] = data['project'].get('type')
-                                    break
-                                except:
-                                    pass
-
-                    discovered.append(proj_info)
+                if self._is_project_dir(item):
+                    discovered.append(self._get_project_info(item))
         except PermissionError:
             pass
 
