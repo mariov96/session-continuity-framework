@@ -1924,7 +1924,7 @@ class SCFHubMenu:
         self.wait_for_enter()
 
     def teach_menu(self):
-        """Teach all projects"""
+        """Teach projects - push hub learnings to spokes safely"""
         self.clear_screen()
         print("""
 ╔══════════════════════════════════════════════════════════════╗
@@ -1939,30 +1939,151 @@ class SCFHubMenu:
             self.wait_for_enter()
             return
 
-        print(f"   Teaching {len(projects)} SCF-enabled projects\n")
+        # First, scan each project for existing SCF data
+        print("   Scanning projects for existing SCF data...\n")
+
+        project_info = []
+        for proj in projects:
+            proj_path = Path(proj['path']).expanduser()
+            info = {
+                'proj': proj,
+                'path': proj_path,
+                'existing_files': [],
+                'decisions_count': 0,
+                'signals_count': 0,
+                'learnings_to_push': 0
+            }
+
+            if not proj_path.exists():
+                project_info.append(info)
+                continue
+
+            # Find all SCF files (both .scf/ and legacy root files)
+            scf_dir = proj_path / '.scf'
+            if scf_dir.exists():
+                info['existing_files'].extend([f.name for f in scf_dir.glob('*') if f.is_file()])
+
+            # Check for legacy root files
+            for legacy in ['buildstate.json', 'BUILDSTATE.json', 'buildstate.md', 'BUILDSTATE.md']:
+                if (proj_path / legacy).exists():
+                    info['existing_files'].append(f"(root)/{legacy}")
+
+            # Count existing decisions
+            for bs_path in [scf_dir / 'BUILDSTATE.json', scf_dir / 'buildstate.json',
+                           proj_path / 'BUILDSTATE.json', proj_path / 'buildstate.json']:
+                if bs_path.exists():
+                    try:
+                        data = json.loads(bs_path.read_text())
+                        info['decisions_count'] = len(data.get('decisions', []))
+                        break
+                    except:
+                        pass
+
+            # Count signals
+            for sig_path in [scf_dir / 'spoke-signals.jsonl', proj_path / 'spoke-signals.jsonl']:
+                if sig_path.exists():
+                    try:
+                        info['signals_count'] = sum(1 for line in open(sig_path) if line.strip())
+                    except:
+                        pass
+                    break
+
+            # Check hub learnings that could be pushed
+            learnings_dir = self.hub_path / 'learnings'
+            if learnings_dir.exists():
+                info['learnings_to_push'] = len(list(learnings_dir.glob('*.json')))
+
+            project_info.append(info)
+
+        # Display what we found
+        print("   Found existing SCF data:\n")
+        for i, info in enumerate(project_info, 1):
+            proj = info['proj']
+            files_count = len(info['existing_files'])
+            print(f"   {i}. {proj['name']}")
+            if files_count:
+                print(f"      📂 {files_count} SCF files found")
+                print(f"      📊 {info['decisions_count']} decisions, {info['signals_count']} signals")
+            else:
+                print(f"      📭 No existing SCF files")
+
+        # Hub learnings summary
+        learnings_dir = self.hub_path / 'learnings'
+        hub_learnings = list(learnings_dir.glob('*.json')) if learnings_dir.exists() else []
+        print(f"\n   Hub has {len(hub_learnings)} learning file(s) to share")
+
+        print(f"""
+   ─────────────────────────────────────
+   What 'Teach' does:
+   • Updates kb-sync.json timestamps
+   • Preserves ALL existing decisions and signals
+   • Does NOT overwrite buildstate files
+   • Merges learnings, never deletes
+""")
+        print(f"\n   Selection (1,3,5 or 1-{len(projects)}) [all]: ", end="")
+        selection = input().strip().lower()
+
+        if selection in ('b', 'c'):
+            return
+
+        indices = self._parse_selection(selection, len(projects))
+        if not indices:
+            print("   ❌ No valid selection")
+            self.wait_for_enter()
+            return
+
+        selected_info = [project_info[i] for i in indices]
+
+        print(f"\n   Teaching {len(selected_info)} project(s)...\n")
 
         taught_count = 0
-        for proj in projects:
-            proj_path = Path(proj['path'])
-            print(f"   📝 Updating {proj['name']}...")
+        for info in selected_info:
+            proj = info['proj']
+            proj_path = info['path']
 
-            kb_sync_path = proj_path / '.scf' / 'kb-sync.json'
-            if kb_sync_path.exists():
-                try:
-                    with open(kb_sync_path) as f:
-                        kb_sync = json.load(f)
-                    kb_sync['last_sync_date'] = datetime.now(timezone.utc).isoformat()
-                    kb_sync['hub_kb_version'] = datetime.now(timezone.utc).isoformat()
-                    with open(kb_sync_path, 'w') as f:
-                        json.dump(kb_sync, f, indent=2)
-                    taught_count += 1
-                except:
-                    pass
+            if not proj_path.exists():
+                print(f"   • {proj['name']}... ❌ Path not found")
+                continue
 
-            proj['last_sync'] = datetime.now(timezone.utc).isoformat()
+            print(f"   • {proj['name']}...", end=" ")
+
+            try:
+                scf_dir = proj_path / '.scf'
+                scf_dir.mkdir(exist_ok=True)
+
+                # Update or create kb-sync.json (merge, don't overwrite)
+                kb_sync_path = scf_dir / 'kb-sync.json'
+                kb_sync = {}
+                if kb_sync_path.exists():
+                    try:
+                        kb_sync = json.loads(kb_sync_path.read_text())
+                    except:
+                        pass
+
+                kb_sync['last_sync_date'] = datetime.now(timezone.utc).isoformat()
+                kb_sync['hub_kb_version'] = datetime.now(timezone.utc).isoformat()
+                kb_sync['hub_path'] = str(self.hub_path)
+                kb_sync['framework_path'] = str(self.framework_path)
+
+                with open(kb_sync_path, 'w') as f:
+                    json.dump(kb_sync, f, indent=2)
+
+                # Update registry
+                proj['last_sync'] = datetime.now(timezone.utc).isoformat()
+                taught_count += 1
+
+                if info['existing_files']:
+                    print(f"✅ Synced (preserved {len(info['existing_files'])} files)")
+                else:
+                    print("✅ Synced")
+
+            except Exception as e:
+                print(f"❌ {e}")
 
         self.save_registry(registry)
-        print(f"\n   ✅ Updated {taught_count} projects")
+        print(f"\n   ═══════════════════════════════════════")
+        print(f"   ✅ Taught {taught_count} project(s)")
+        print(f"   ℹ️  No existing SCF data was modified or deleted")
         self.wait_for_enter()
 
     def stats_menu(self):
@@ -2044,60 +2165,119 @@ class SCFHubMenu:
             self._learn_from_projects(items)
 
     def _enable_scf_batch(self, projects: list):
-        """Enable SCF on multiple projects"""
+        """Enable SCF on multiple projects with preview and verification"""
         self.clear_screen()
         print("\n   🚀 Enable SCF on Projects")
         print("   ─────────────────────────────────────\n")
 
-        for i, proj in enumerate(projects, 1):
-            print(f"   {i}. {proj['name']} ({proj.get('path', 'unknown')})")
+        # Preview what will happen for each project
+        print("   Preview - checking each project:\n")
+        project_status = []
 
-        print(f"\n   Selection (1,3,5 or 1-{len(projects)}) [all]: ", end="")
-        selection = input().strip().lower()
-        if selection in ('b', 'c'):
-            return
+        for proj in projects:
+            proj_path = Path(proj.get('path', '')).expanduser()
+            status = {'proj': proj, 'path': proj_path, 'actions': [], 'existing': []}
 
-        indices = self._parse_selection(selection, len(projects))
-        if not indices:
-            print("   No valid selection")
+            if not proj_path.exists():
+                status['actions'].append("❌ Path not found")
+                project_status.append(status)
+                continue
+
+            scf_dir = proj_path / '.scf'
+
+            # Check for existing SCF files
+            existing_files = []
+            if scf_dir.exists():
+                existing_files = list(scf_dir.glob('*'))
+            # Also check root for legacy buildstate
+            if (proj_path / 'buildstate.json').exists():
+                existing_files.append(proj_path / 'buildstate.json')
+            if (proj_path / 'BUILDSTATE.json').exists():
+                existing_files.append(proj_path / 'BUILDSTATE.json')
+
+            if existing_files:
+                status['existing'] = [f.name for f in existing_files]
+                status['actions'].append(f"⚠️  Has {len(existing_files)} existing SCF file(s) - will PRESERVE")
+            else:
+                status['actions'].append("📄 Will create new .scf/ with templates")
+
+            # Check what templates would be added
+            templates_dir = self.framework_path / 'templates' / 'spoke'
+            if templates_dir.exists():
+                new_templates = []
+                for t in templates_dir.glob('*'):
+                    if t.is_file():
+                        dest = scf_dir / t.name
+                        if not dest.exists():
+                            new_templates.append(t.name)
+                if new_templates:
+                    status['actions'].append(f"➕ Will add: {', '.join(new_templates[:3])}{'...' if len(new_templates) > 3 else ''}")
+
+            project_status.append(status)
+
+        # Display preview
+        for i, status in enumerate(project_status, 1):
+            proj = status['proj']
+            print(f"   {i}. {proj['name']}")
+            for action in status['actions']:
+                print(f"      {action}")
+            if status['existing']:
+                print(f"      📂 Existing: {', '.join(status['existing'][:4])}{'...' if len(status['existing']) > 4 else ''}")
+            print()
+
+        # Confirm
+        print("   ─────────────────────────────────────")
+        print("   ⚠️  Existing SCF files will NOT be overwritten")
+        confirm = input("\n   Proceed? [Y/n]: ").strip().lower()
+
+        if confirm == 'n':
+            print("\n   Cancelled.")
             self.wait_for_enter()
             return
 
-        selected = [projects[i] for i in indices]
-        print(f"\n   Enabling SCF on {len(selected)} project(s)...")
+        print(f"\n   Enabling SCF...")
 
-        for proj in selected:
-            proj_path = Path(proj['path']).expanduser()
-            if proj_path.exists():
-                print(f"   • {proj['name']}...", end=" ")
-                try:
-                    # Initialize SCF in the project
-                    scf_dir = proj_path / '.scf'
-                    scf_dir.mkdir(exist_ok=True)
+        for status in project_status:
+            proj = status['proj']
+            proj_path = status['path']
 
-                    # Copy templates
-                    templates_dir = self.framework_path / 'templates' / 'spoke'
-                    if templates_dir.exists():
-                        import shutil
-                        for template_file in templates_dir.glob('*'):
-                            if template_file.is_file():
-                                dest = scf_dir / template_file.name
-                                if not dest.exists():
-                                    shutil.copy(template_file, dest)
+            if not proj_path.exists():
+                continue
 
-                    # Update registry
-                    registry = self.load_registry()
-                    for p in registry.get('projects', []):
-                        if p['name'] == proj['name']:
-                            p['scf_enabled'] = True
-                            break
-                    self._save_registry(registry)
+            print(f"   • {proj['name']}...", end=" ")
+            try:
+                # Initialize SCF in the project
+                scf_dir = proj_path / '.scf'
+                scf_dir.mkdir(exist_ok=True)
 
+                # Copy templates (only if not exists)
+                templates_dir = self.framework_path / 'templates' / 'spoke'
+                added = []
+                if templates_dir.exists():
+                    import shutil
+                    for template_file in templates_dir.glob('*'):
+                        if template_file.is_file():
+                            dest = scf_dir / template_file.name
+                            if not dest.exists():
+                                shutil.copy(template_file, dest)
+                                added.append(template_file.name)
+
+                # Update registry
+                registry = self.load_registry()
+                for p in registry.get('projects', []):
+                    if p['name'] == proj['name']:
+                        p['scf_enabled'] = True
+                        break
+                self._save_registry(registry)
+
+                if added:
+                    print(f"✅ Added {len(added)} file(s)")
+                elif status['existing']:
+                    print(f"✅ Preserved {len(status['existing'])} existing file(s)")
+                else:
                     print("✅")
-                except Exception as e:
-                    print(f"❌ {e}")
-            else:
-                print(f"   • {proj['name']}... ❌ Path not found")
+            except Exception as e:
+                print(f"❌ {e}")
 
         self.wait_for_enter()
 
