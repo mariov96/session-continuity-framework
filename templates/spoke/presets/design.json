@@ -1,0 +1,126 @@
+{
+  "_preset_info": {
+    "type": "design",
+    "name": "Design Project Template",
+    "description": "For UI/UX design, architecture planning, system design, and creative projects"
+  },
+
+  "_scf_metadata": {
+    "version": "2.2.0",
+    "structure_version": "v2",
+    "project_type": "design"
+  },
+
+  "_project_foundation": {
+    "completed": false,
+    "completed_at": null,
+    "completed_with": null,
+
+    "identity": {
+      "type": "design",
+      "name": null,
+      "one_liner": null,
+      "success_looks_like": null,
+      "design_domain": null
+    },
+
+    "boundaries": {
+      "in_scope": [],
+      "out_of_scope": [],
+      "constraints": [],
+      "technical_constraints": [],
+      "brand_guidelines": null
+    },
+
+    "approach": {
+      "design_methodology": null,
+      "tools": [],
+      "ai_collaboration_style": "collaborative",
+      "review_process": "AI proposes, human critiques and refines"
+    },
+
+    "philosophy": {
+      "core_principle": "AI as design collaborator - brainstorm, iterate, but human has final creative vision",
+      "behaviors": [
+        "Start with user needs, not solutions",
+        "Propose multiple options before settling",
+        "Explain design rationale",
+        "Respect existing design systems"
+      ]
+    },
+
+    "evolution_log": []
+  },
+
+  "_session_state": {
+    "last_session_id": null,
+    "last_modified_by": null,
+    "last_modified_at": null,
+    "requires_review": false,
+    "session_count": 0
+  },
+
+  "project": {
+    "name": null,
+    "type": "design",
+    "description": null,
+    "design_domain": null,
+    "status": "discovery"
+  },
+
+  "users": {
+    "personas": [],
+    "needs": [],
+    "pain_points": [],
+    "jobs_to_be_done": []
+  },
+
+  "design_system": {
+    "principles": [],
+    "patterns": [],
+    "components": [],
+    "brand_guidelines": null
+  },
+
+  "iterations": [],
+
+  "decisions": {
+    "made": [],
+    "pending": [],
+    "rationale": []
+  },
+
+  "artifacts": {
+    "wireframes": [],
+    "mockups": [],
+    "prototypes": [],
+    "specifications": []
+  },
+
+  "feedback": {
+    "user_testing": [],
+    "stakeholder_input": [],
+    "incorporated": []
+  },
+
+  "next_steps": [
+    "Define user personas and needs",
+    "Establish design principles",
+    "Create initial concepts"
+  ],
+
+  "ai_rules": {
+    "context_loading": "Read users and design_system first",
+    "design_behavior": {
+      "on_new_feature": "Start with user need, propose multiple approaches",
+      "on_iteration": "Explain what changed and why",
+      "on_constraint": "Document in boundaries.technical_constraints",
+      "on_decision": "Record rationale in decisions"
+    },
+    "collaboration": {
+      "propose_alternatives": "Always offer 2-3 options for significant decisions",
+      "respect_vision": "Don't override established design principles",
+      "document_rationale": "Explain the 'why' behind design choices"
+    }
+  }
+}

@@ -1,0 +1,223 @@
+{
+  "_scf_metadata": {
+    "version": "2.2.0",
+    "structure_version": "v2",
+    "description": "SCF Framework - Core code and spoke templates for AI context persistence",
+    "hub_reference": {
+      "note": "This project connects to a hub for cross-project learnings",
+      "hub_location": "~/scf-hub",
+      "github_repo": "mariov96/session-continuity-framework"
+    },
+    "last_sync_date": "2025-12-22T00:00:00Z",
+    "hub_kb_version": "2025-12-22T00:00:00Z",
+    "spoke_kb_version": "2025-12-22T00:00:00Z"
+  },
+
+  "_project_foundation": {
+    "completed": true,
+    "completed_at": "2025-12-22T00:00:00Z",
+    "completed_with": "Claude Opus 4.5",
+
+    "identity": {
+      "type": "framework",
+      "name": "Session Continuity Framework (SCF)",
+      "one_liner": "AI-agnostic context persistence for any knowledge work",
+      "success_looks_like": "Any AI assistant can pick up any project with full context, and learnings flow across projects automatically"
+    },
+
+    "boundaries": {
+      "in_scope": [
+        "Core framework code (CLI, Python modules)",
+        "Spoke templates and schemas",
+        "Hub creation tooling",
+        "Documentation for SCF usage",
+        "AI instruction generation (SCF_README.md)",
+        "Cross-project learning protocols"
+      ],
+      "out_of_scope": [
+        "Hub storage (user creates separately)",
+        "User's personal data/preferences",
+        "IDE extensions (separate repos)",
+        "Browser extensions (separate repos)",
+        "Project-specific implementations"
+      ],
+      "constraints": [
+        "AI-agnostic: Must work with Claude, GPT, Copilot, Gemini, etc.",
+        "Environment-agnostic: No lock-in to specific tools",
+        "Lightweight: Minimal dependencies, easy adoption",
+        "Non-coding support: Works for research, writing, design - not just code"
+      ]
+    },
+
+    "approach": {
+      "stack_or_tools": ["Python 3.7+", "JSON/JSONL", "Markdown"],
+      "workflow": "Dogfooding - SCF tracks its own development",
+      "ai_collaboration_style": "collaborative",
+      "review_process": "AI proposes, human approves direction changes"
+    },
+
+    "philosophy": {
+      "core_principle": "AI as responsible partner, not just enabler",
+      "behaviors": [
+        "Detect scope drift and flag before enabling",
+        "Require explicit acknowledgment for direction changes",
+        "Complete foundation before starting work",
+        "Prefer 'are you sure?' over silent compliance"
+      ]
+    },
+
+    "evolution_log": [
+      {
+        "date": "2025-12-22",
+        "change": "Established project foundation - separated framework from hub",
+        "rationale": "Framework is the brains, hub is user's personal storage. Clear separation enables adoption without inheriting creator's context.",
+        "acknowledged_by": "Mario Vaccari",
+        "ai_partner": "Claude Opus 4.5"
+      }
+    ]
+  },
+
+  "_session_state": {
+    "last_session_id": "claude-opus-2025-12-22-foundation-reorganization",
+    "last_modified_by": "Claude Opus 4.5",
+    "last_modified_at": "2025-12-22T00:00:00Z",
+    "requires_review": false,
+    "review_reason": null,
+    "session_count": 4
+  },
+
+  "project": {
+    "name": "Session Continuity Framework",
+    "version": "2.2.0",
+    "type": "framework",
+    "description": "AI-agnostic context persistence framework for any knowledge work",
+    "repository": "https://github.com/mariov96/session-continuity-framework",
+    "created": "2024-11-01T00:00:00Z",
+    "last_updated": "2025-12-22T00:00:00Z"
+  },
+
+  "stack": {
+    "core": ["Python 3.7+", "JSON/JSONL", "Markdown"],
+    "cli": ["./scf unified CLI"],
+    "structure": [".scf/", "templates/spoke/", "docs/"]
+  },
+
+  "features": [
+    {
+      "name": "Project Foundation System",
+      "status": "active",
+      "description": "Guided setup extracts project identity, boundaries, approach - AI detects drift and enforces intentionality",
+      "impact": 10
+    },
+    {
+      "name": "Hub-Spoke Architecture",
+      "status": "active",
+      "description": "Framework provides spoke templates; users create their own hub for personal learnings",
+      "impact": 10
+    },
+    {
+      "name": "AI Stewardship Philosophy",
+      "status": "active",
+      "description": "AI as responsible partner - detects scope drift, requires acknowledgment for direction changes",
+      "impact": 9
+    },
+    {
+      "name": "Spoke Signals (JSONL)",
+      "status": "active",
+      "description": "Append-only signal log for hub-spoke communication",
+      "impact": 9
+    },
+    {
+      "name": "SCF_README.md Generation",
+      "status": "active",
+      "description": "AI instructions generated for each spoke project",
+      "impact": 9
+    },
+    {
+      "name": "Unified CLI (./scf)",
+      "status": "active",
+      "description": "Single entry point replacing 25+ scripts - init, sync, hub create",
+      "impact": 8
+    },
+    {
+      "name": "Non-Coding Project Support",
+      "status": "planned",
+      "description": "Templates and workflows for research, writing, design projects",
+      "impact": 8
+    },
+    {
+      "name": "Dogfooding",
+      "status": "active",
+      "description": "SCF tracks its own development - living example for users",
+      "impact": 8
+    }
+  ],
+
+  "decisions": [
+    {
+      "date": "2025-12-22",
+      "decision": "Framework-Hub separation",
+      "rationale": "This repo contains only framework code and spoke templates. Hub (user's personal data, learnings, project registry) lives separately at user-chosen location. Extensions live in separate repos.",
+      "impact": 10,
+      "by": "Claude Opus 4.5 + Mario Vaccari"
+    },
+    {
+      "date": "2025-12-22",
+      "decision": "Project Foundation system inspired by Conductor",
+      "rationale": "Learned from Google's Conductor: guided setup extracts project identity, boundaries, approach. SCF adds drift detection and evolution logging for intentional development.",
+      "impact": 10,
+      "by": "Claude Opus 4.5 + Mario Vaccari"
+    },
+    {
+      "date": "2025-12-22",
+      "decision": "AI as responsible partner philosophy",
+      "rationale": "AI should reign in vibe coding when it strays too far. Detect drift, require explicit acknowledgment for direction changes. Enable but remain intentful.",
+      "impact": 9,
+      "by": "Claude Opus 4.5 + Mario Vaccari"
+    },
+    {
+      "date": "2025-12-01",
+      "decision": "Hub-Spoke architecture with local spoke signals",
+      "rationale": "Spokes signal locally (append-only JSONL), hub pulls on demand. Prevents spokes from needing write access to hub.",
+      "impact": 10,
+      "by": "Claude Code"
+    },
+    {
+      "date": "2025-12-01",
+      "decision": "Signal noise threshold",
+      "rationale": "Only share learnings with impact >= 8 to prevent signal noise",
+      "impact": 8,
+      "by": "Claude Code"
+    }
+  ],
+
+  "next_steps": [
+    "Create templates/spoke/ with foundation-ready templates",
+    "Update scf CLI with 'hub create' command for guided hub setup",
+    "Move .scf-registry/ contents to user's hub location",
+    "Move extensions to separate repos (scf-vscode-extension, scf-browser-extension)",
+    "Add drift detection logic to SCF_README.md template",
+    "Implement incomplete foundation detection in teach.py",
+    "Create non-coding project templates (research, writing, design)"
+  ],
+
+  "ai_rules": {
+    "context_loading": "Read .scf/SCF_README.md first, then BUILDSTATE.json and BUILDSTATE.md",
+    "session_state": "Update _session_state when making significant changes",
+    "foundation_enforcement": {
+      "on_incomplete": "Guide user through foundation questions before work",
+      "on_drift_detected": "Present options, require explicit choice",
+      "on_evolution": "Log change with rationale and acknowledgment"
+    },
+    "stewardship": {
+      "principle": "AI is the responsible partner, not just an enabler",
+      "behaviors": [
+        "Detect scope drift and flag before enabling",
+        "Require explicit acknowledgment for direction changes",
+        "Complete foundation before starting work",
+        "Prefer 'are you sure?' over silent compliance"
+      ]
+    },
+    "dogfooding": "This project uses SCF to track its own development - living example for users"
+  }
+}

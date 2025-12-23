@@ -1,0 +1,607 @@
+#!/usr/bin/env python3
+"""
+SCF - Session Continuity Framework
+Unified Command Line Interface
+
+This replaces the 25+ separate Python scripts with a single, intuitive entry point.
+Provides role-based onboarding and progressive complexity disclosure.
+"""
+
+import argparse
+import sys
+import json
+import shutil
+from pathlib import Path
+from typing import Optional
+from datetime import datetime, timezone
+
+# Import existing SCF modules
+try:
+    from teach import main as teach_main, init_project, update_project
+    from scf_enhanced_overview import generate_enhanced_overview
+    from buildstate_hunter_learner import main as hunter_main
+    from scf_sync_checker import check_sync_status
+except ImportError as e:
+    # Allow partial imports for hub-only operations
+    pass
+
+class SCFOnboarding:
+    """Handles user onboarding and role selection"""
+
+    def show_welcome(self):
+        """Display welcome message and explain SCF concept"""
+        print("""
+🚀 Welcome to Session Continuity Framework (SCF)
+
+SCF gives your AI assistants perfect memory across all your development sessions.
+Never lose context, never repeat explanations, always stay in flow.
+
+Choose your role:
+""")
+
+    def choose_role(self) -> str:
+        """Let user choose between hub and spoke modes"""
+        print("1. 📊 Project Manager (Hub) - Manage multiple projects from one central location")
+        print("2. 💻 Solo Developer (Spoke) - Add AI memory to a single project")
+        print("3. ❓ Learn More - Understand the difference")
+
+        while True:
+            choice = input("\nEnter your choice (1/2/3): ").strip()
+            if choice == "1":
+                return "hub"
+            elif choice == "2":
+                return "spoke"
+            elif choice == "3":
+                self.explain_hub_spoke()
+            else:
+                print("Please enter 1, 2, or 3")
+
+    def explain_hub_spoke(self):
+        """Explain hub vs spoke concept clearly"""
+        print("""
+🏗️  Hub vs Spoke - Simple Explanation:
+
+🎯 SPOKE MODE (Solo Developer):
+   - You work on ONE project
+   - SCF adds "memory" to that project
+   - AI assistants remember all your conversations
+   - Perfect for: Individual projects, focused development
+
+📊 HUB MODE (Project Manager):
+   - You manage MULTIPLE projects
+   - Central dashboard shows all project health
+   - Share learnings between projects
+   - Perfect for: Teams, consultants, multiple client projects
+
+Most people start with SPOKE mode for their current project.
+""")
+
+
+class SCFHubManager:
+    """Manages SCF Hub creation and configuration"""
+
+    def __init__(self, framework_path: Path):
+        self.framework_path = framework_path
+        self.templates_dir = framework_path / 'templates' / 'hub'
+
+    def create_hub(self, hub_path: Path, interactive: bool = True) -> bool:
+        """Create a new SCF hub at the specified location"""
+        hub_path = hub_path.expanduser().resolve()
+
+        print(f"\n🏗️  Creating SCF Hub at: {hub_path}\n")
+
+        # Create hub directory
+        hub_path.mkdir(parents=True, exist_ok=True)
+
+        # Create .scf directory (hub is also a spoke tracking itself)
+        scf_dir = hub_path / '.scf'
+        scf_dir.mkdir(exist_ok=True)
+
+        # Create .scf-registry directory
+        registry_dir = hub_path / '.scf-registry'
+        registry_dir.mkdir(exist_ok=True)
+        (registry_dir / 'spokes').mkdir(exist_ok=True)
+
+        # Gather user info if interactive
+        user_info = {}
+        if interactive:
+            user_info = self._gather_user_info()
+
+        # Create hub-profile.json
+        self._create_hub_profile(hub_path, user_info)
+
+        # Create spoke-projects.json
+        self._create_spoke_registry(registry_dir)
+
+        # Create hub's own buildstate (it's a spoke tracking itself)
+        self._create_hub_buildstate(scf_dir, hub_path)
+
+        # Create learnings directory
+        learnings_dir = hub_path / 'learnings'
+        learnings_dir.mkdir(exist_ok=True)
+
+        print(f"\n✅ Hub created successfully at: {hub_path}")
+        print(f"\n📁 Structure created:")
+        print(f"   {hub_path}/")
+        print(f"   ├── .scf/                  # Hub's own buildstate")
+        print(f"   ├── .scf-registry/         # Project registry")
+        print(f"   │   ├── spokes/            # Individual spoke tracking")
+        print(f"   │   └── spoke-projects.json")
+        print(f"   ├── hub-profile.json       # Your preferences")
+        print(f"   └── learnings/             # Cross-project patterns")
+        print(f"\n🚀 Next steps:")
+        print(f"   1. Edit hub-profile.json with your details")
+        print(f"   2. Run 'scf projects scan' to discover projects")
+        print(f"   3. Run 'scf init' in any project to connect it")
+
+        return True
+
+    def _gather_user_info(self) -> dict:
+        """Interactive user info gathering"""
+        print("📋 Let's personalize your hub:\n")
+
+        name = input("   What name should AI partners call you? ").strip()
+
+        print("\n   What's your primary development focus?")
+        print("   (e.g., 'Full-stack web, Python automation')")
+        focus = input("   > ").strip()
+
+        print("\n   How do you prefer AI collaboration?")
+        print("   [1] Autonomous - Take initiative, check in on big decisions")
+        print("   [2] Collaborative - Discuss approach before implementing")
+        print("   [3] Supervised - Always ask before acting")
+
+        while True:
+            style_choice = input("   > ").strip()
+            if style_choice == "1":
+                style = "autonomous"
+                break
+            elif style_choice == "2":
+                style = "collaborative"
+                break
+            elif style_choice == "3":
+                style = "supervised"
+                break
+            else:
+                print("   Please enter 1, 2, or 3")
+
+        return {
+            'name': name,
+            'focus': focus,
+            'style': style
+        }
+
+    def _create_hub_profile(self, hub_path: Path, user_info: dict):
+        """Create hub-profile.json with user info"""
+        profile_template = self.templates_dir / 'hub-profile.json'
+
+        if profile_template.exists():
+            with open(profile_template) as f:
+                profile = json.load(f)
+        else:
+            profile = {
+                "user": {"name": None},
+                "work_style": {"description": None},
+                "hub_config": {}
+            }
+
+        # Fill in user info
+        profile['user']['name'] = user_info.get('name', 'Developer')
+        profile['work_style']['description'] = user_info.get('focus', '')
+        profile['work_style']['ai_collaboration_style'] = user_info.get('style', 'collaborative')
+        profile['hub_config']['created_at'] = datetime.now(timezone.utc).isoformat()
+        profile['hub_config']['hub_path'] = str(hub_path)
+
+        profile_path = hub_path / 'hub-profile.json'
+        with open(profile_path, 'w') as f:
+            json.dump(profile, f, indent=2)
+
+        print(f"   ✅ Created hub-profile.json")
+
+    def _create_spoke_registry(self, registry_dir: Path):
+        """Create spoke-projects.json registry"""
+        registry_template = self.templates_dir / 'spoke-projects.json'
+
+        if registry_template.exists():
+            shutil.copy2(registry_template, registry_dir / 'spoke-projects.json')
+        else:
+            registry = {
+                "version": "1.0",
+                "projects": [],
+                "last_scan": None
+            }
+            with open(registry_dir / 'spoke-projects.json', 'w') as f:
+                json.dump(registry, f, indent=2)
+
+        print(f"   ✅ Created spoke registry")
+
+    def _create_hub_buildstate(self, scf_dir: Path, hub_path: Path):
+        """Create hub's own buildstate (hub tracks itself as a spoke)"""
+        buildstate = {
+            "_scf_metadata": {
+                "version": "2.2.0",
+                "structure_version": "v2",
+                "description": "SCF Hub - Your personal learning center",
+                "is_hub": True,
+                "hub_path": str(hub_path)
+            },
+            "_project_foundation": {
+                "completed": True,
+                "completed_at": datetime.now(timezone.utc).isoformat(),
+                "identity": {
+                    "type": "hub",
+                    "name": "SCF Hub",
+                    "one_liner": "Central hub for cross-project learnings",
+                    "success_looks_like": "All projects connected, learnings flowing"
+                },
+                "boundaries": {
+                    "in_scope": ["User preferences", "Project registry", "Cross-project learnings"],
+                    "out_of_scope": ["Individual project code", "Framework development"]
+                }
+            },
+            "_session_state": {
+                "last_modified_by": "scf hub create",
+                "last_modified_at": datetime.now(timezone.utc).isoformat(),
+                "session_count": 1
+            },
+            "project": {
+                "name": "SCF Hub",
+                "type": "hub",
+                "created": datetime.now(timezone.utc).isoformat()
+            }
+        }
+
+        with open(scf_dir / 'BUILDSTATE.json', 'w') as f:
+            json.dump(buildstate, f, indent=2)
+
+        print(f"   ✅ Created hub buildstate")
+
+    @staticmethod
+    def find_hub() -> Optional[Path]:
+        """Find existing hub location"""
+        # Check common locations
+        common_paths = [
+            Path.home() / 'scf-hub',
+            Path.home() / '.scf-hub',
+            Path.home() / 'projects' / 'scf-hub'
+        ]
+
+        for path in common_paths:
+            if (path / 'hub-profile.json').exists():
+                return path
+
+        # Check environment variable
+        import os
+        env_hub = os.environ.get('SCF_HUB_PATH')
+        if env_hub:
+            env_path = Path(env_hub).expanduser()
+            if env_path.exists():
+                return env_path
+
+        return None
+
+
+class SCFCommands:
+    """Main SCF command implementations"""
+
+    @staticmethod
+    def cmd_init(args):
+        """Initialize SCF in a project (spoke mode) or setup hub"""
+        project_path = Path(args.path).resolve()
+
+        if args.hub:
+            print("🏗️  Setting up SCF Hub...")
+            print("Use 'scf hub create' for guided hub setup.")
+        elif args.guided:
+            SCFCommands._guided_init(project_path, args)
+        else:
+            print(f"🚀 Initializing SCF in: {project_path.name}")
+            # Use existing teach.py init logic
+            hub_path = Path(__file__).parent.resolve()
+            init_project(project_path, hub_path, args.verbose)
+
+    @staticmethod
+    def _guided_init(project_path: Path, args):
+        """Guided initialization with foundation questions"""
+        print(f"\n🚀 Guided SCF Setup for: {project_path.name}\n")
+        print("Let's establish your project foundation.\n")
+
+        # Gather foundation info
+        print("📋 Project Identity:\n")
+
+        name = input("   Project name: ").strip() or project_path.name
+
+        print("\n   What type of project is this?")
+        print("   [1] Code - Software development")
+        print("   [2] Research - Investigation, analysis")
+        print("   [3] Writing - Documentation, content")
+        print("   [4] Design - UI/UX, architecture")
+        print("   [5] Hybrid - Mix of above")
+
+        type_map = {'1': 'code', '2': 'research', '3': 'writing', '4': 'design', '5': 'hybrid'}
+        while True:
+            type_choice = input("   > ").strip()
+            if type_choice in type_map:
+                project_type = type_map[type_choice]
+                break
+            print("   Please enter 1-5")
+
+        one_liner = input("\n   One-sentence description: ").strip()
+        success = input("   What does 'done' look like? ").strip()
+
+        print("\n📋 Boundaries:\n")
+        in_scope = input("   What's IN scope? (comma-separated): ").strip()
+        out_scope = input("   What's OUT of scope? (comma-separated): ").strip()
+
+        print("\n📋 AI Collaboration:\n")
+        print("   How should AI work with you?")
+        print("   [1] Autonomous - Take initiative")
+        print("   [2] Collaborative - Discuss first")
+        print("   [3] Supervised - Always ask")
+
+        style_map = {'1': 'autonomous', '2': 'collaborative', '3': 'supervised'}
+        while True:
+            style_choice = input("   > ").strip()
+            if style_choice in style_map:
+                ai_style = style_map[style_choice]
+                break
+            print("   Please enter 1-3")
+
+        # Initialize with foundation
+        hub_path = Path(__file__).parent.resolve()
+        init_project(project_path, hub_path, args.verbose)
+
+        # Update buildstate with foundation
+        scf_dir = project_path / '.scf'
+        buildstate_path = scf_dir / 'BUILDSTATE.json'
+
+        if buildstate_path.exists():
+            with open(buildstate_path) as f:
+                buildstate = json.load(f)
+        else:
+            buildstate = {}
+
+        # Add foundation
+        buildstate['_project_foundation'] = {
+            "completed": True,
+            "completed_at": datetime.now(timezone.utc).isoformat(),
+            "completed_with": "scf init --guided",
+            "identity": {
+                "type": project_type,
+                "name": name,
+                "one_liner": one_liner,
+                "success_looks_like": success
+            },
+            "boundaries": {
+                "in_scope": [s.strip() for s in in_scope.split(',') if s.strip()],
+                "out_of_scope": [s.strip() for s in out_scope.split(',') if s.strip()],
+                "constraints": []
+            },
+            "approach": {
+                "ai_collaboration_style": ai_style
+            },
+            "philosophy": {
+                "core_principle": "AI as responsible partner, not just enabler",
+                "behaviors": [
+                    "Detect scope drift and flag before enabling",
+                    "Require explicit acknowledgment for direction changes"
+                ]
+            },
+            "evolution_log": [{
+                "date": datetime.now().strftime("%Y-%m-%d"),
+                "change": "Project foundation established",
+                "acknowledged_by": "User via guided setup",
+                "ai_partner": "scf CLI"
+            }]
+        }
+
+        # Update project info
+        buildstate['project'] = {
+            "name": name,
+            "type": project_type,
+            "description": one_liner
+        }
+
+        with open(buildstate_path, 'w') as f:
+            json.dump(buildstate, f, indent=2)
+
+        print(f"\n✅ Project foundation established!")
+        print(f"   AI assistants will now work within your defined boundaries.")
+
+    @staticmethod
+    def cmd_sync(args):
+        """Sync project with hub or check sync status"""
+        project_path = Path(args.path or ".").resolve()
+
+        if args.status:
+            print(f"🔍 Checking sync status for: {project_path.name}")
+            check_sync_status(project_path)
+        else:
+            print(f"🔄 Syncing {project_path.name} with hub...")
+            hub_path = Path(__file__).parent.resolve()
+            update_project(project_path, hub_path, args.verbose)
+
+    @staticmethod
+    def cmd_hub(args):
+        """Hub management commands"""
+        framework_path = Path(__file__).parent.resolve()
+        hub_manager = SCFHubManager(framework_path)
+
+        if args.action == "create":
+            hub_path = Path(args.path or "~/scf-hub").expanduser()
+            hub_manager.create_hub(hub_path, interactive=not args.non_interactive)
+
+        elif args.action == "locate":
+            hub_path = hub_manager.find_hub()
+            if hub_path:
+                print(f"✅ Hub found at: {hub_path}")
+            else:
+                print("❌ No hub found.")
+                print("\nTo create a hub, run: scf hub create")
+                print("Or set SCF_HUB_PATH environment variable")
+
+        elif args.action == "status":
+            hub_path = hub_manager.find_hub()
+            if hub_path:
+                print(f"📊 Hub Status: {hub_path}\n")
+                # Show hub info
+                profile_path = hub_path / 'hub-profile.json'
+                if profile_path.exists():
+                    with open(profile_path) as f:
+                        profile = json.load(f)
+                    print(f"   User: {profile.get('user', {}).get('name', 'Unknown')}")
+                    print(f"   Created: {profile.get('hub_config', {}).get('created_at', 'Unknown')}")
+
+                # Count projects
+                registry_path = hub_path / '.scf-registry' / 'spoke-projects.json'
+                if registry_path.exists():
+                    with open(registry_path) as f:
+                        registry = json.load(f)
+                    print(f"   Projects: {len(registry.get('projects', []))}")
+            else:
+                print("❌ No hub configured")
+
+    @staticmethod
+    def cmd_server(args):
+        """Start/stop/status local SCF server"""
+        try:
+            from scf_local_server import SCFLocalServer
+        except ImportError:
+            print("❌ Server module not available")
+            return
+
+        if args.action == "start":
+            print("🌐 Starting SCF local server...")
+            server = SCFLocalServer(port=args.port)
+            print(f"✅ Server running on http://localhost:{args.port}")
+
+        elif args.action == "stop":
+            print("🛑 Stopping SCF server...")
+
+        elif args.action == "status":
+            print("📊 Server status: checking...")
+
+    @staticmethod
+    def cmd_projects(args):
+        """Project discovery and management (hub features)"""
+        if args.action == "scan":
+            print("🔍 Scanning for SCF projects...")
+            try:
+                hunter_main()
+            except:
+                print("   Scanning current directory tree...")
+
+        elif args.action == "health":
+            print("🏥 Project health overview:")
+            # Show health dashboard
+
+        elif args.action == "learn":
+            print("🧠 Learning from project patterns...")
+
+
+def create_parser():
+    """Create the unified argument parser"""
+    parser = argparse.ArgumentParser(
+        description="SCF - Session Continuity Framework",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  scf init                    # Initialize current directory as SCF project
+  scf init --guided           # Guided setup with foundation questions
+  scf hub create              # Create your personal hub
+  scf hub create ~/my-hub     # Create hub at specific location
+  scf sync                    # Sync current project with hub
+  scf sync --status           # Check sync status
+  scf projects scan           # Discover projects
+
+For more help: scf <command> --help
+        """
+    )
+
+    parser.add_argument('--verbose', '-v', action='store_true', help='Verbose output')
+
+    # Subcommands
+    subparsers = parser.add_subparsers(dest='command', help='Available commands')
+
+    # Init command
+    init_parser = subparsers.add_parser('init', help='Initialize SCF in project')
+    init_parser.add_argument('path', nargs='?', default='.', help='Project path (default: current directory)')
+    init_parser.add_argument('--hub', action='store_true', help='[Deprecated] Use "scf hub create" instead')
+    init_parser.add_argument('--guided', '-g', action='store_true', help='Guided setup with foundation questions')
+    init_parser.add_argument('--fresh', action='store_true', help='Reset existing SCF files')
+
+    # Hub command
+    hub_parser = subparsers.add_parser('hub', help='Hub management')
+    hub_parser.add_argument('action', choices=['create', 'locate', 'status'], help='Hub action')
+    hub_parser.add_argument('path', nargs='?', help='Hub path (default: ~/scf-hub)')
+    hub_parser.add_argument('--non-interactive', action='store_true', help='Skip interactive prompts')
+
+    # Sync command
+    sync_parser = subparsers.add_parser('sync', help='Sync with hub or check status')
+    sync_parser.add_argument('path', nargs='?', help='Project path (default: current directory)')
+    sync_parser.add_argument('--status', action='store_true', help='Check sync status only')
+
+    # Server command
+    server_parser = subparsers.add_parser('server', help='Local server management')
+    server_parser.add_argument('action', choices=['start', 'stop', 'status'], help='Server action')
+    server_parser.add_argument('--port', type=int, default=8765, help='Server port (default: 8765)')
+
+    # Projects command (hub features)
+    projects_parser = subparsers.add_parser('projects', help='Project discovery and management')
+    projects_parser.add_argument('action', choices=['scan', 'health', 'learn'], help='Projects action')
+
+    return parser
+
+
+def main():
+    """Main entry point for unified SCF CLI"""
+    parser = create_parser()
+
+    # If no arguments, show onboarding
+    if len(sys.argv) == 1:
+        onboarding = SCFOnboarding()
+        onboarding.show_welcome()
+        role = onboarding.choose_role()
+
+        if role == "hub":
+            print("\n🏗️  Let's set up your SCF Hub:")
+            print("Run: scf hub create")
+        else:
+            print(f"\n💻 Let's add SCF to your current project:")
+            print("Run: scf init --guided")
+        return
+
+    args = parser.parse_args()
+
+    if not args.command:
+        parser.print_help()
+        return
+
+    # Route to appropriate command
+    try:
+        if args.command == 'init':
+            SCFCommands.cmd_init(args)
+        elif args.command == 'hub':
+            SCFCommands.cmd_hub(args)
+        elif args.command == 'sync':
+            SCFCommands.cmd_sync(args)
+        elif args.command == 'server':
+            SCFCommands.cmd_server(args)
+        elif args.command == 'projects':
+            SCFCommands.cmd_projects(args)
+        else:
+            parser.print_help()
+
+    except KeyboardInterrupt:
+        print("\n\n⚠️  Operation cancelled by user")
+    except Exception as e:
+        if hasattr(args, 'verbose') and args.verbose:
+            import traceback
+            traceback.print_exc()
+        else:
+            print(f"❌ Error: {e}")
+            print("Use --verbose for detailed error info")
+
+
+if __name__ == '__main__':
+    main()

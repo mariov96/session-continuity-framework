@@ -1,0 +1,108 @@
+{
+  "_scf_metadata": {
+    "version": "2.2.0",
+    "structure_version": "v2",
+    "description": "SCF-enabled project with context persistence",
+    "hub_reference": {
+      "note": "Update hub_location after running 'scf hub create'",
+      "hub_location": null
+    },
+    "last_sync_date": null,
+    "hub_kb_version": null,
+    "spoke_kb_version": null
+  },
+
+  "_project_foundation": {
+    "completed": false,
+    "completed_at": null,
+    "completed_with": null,
+
+    "identity": {
+      "type": null,
+      "name": null,
+      "one_liner": null,
+      "success_looks_like": null
+    },
+
+    "boundaries": {
+      "in_scope": [],
+      "out_of_scope": [],
+      "constraints": []
+    },
+
+    "approach": {
+      "stack_or_tools": [],
+      "workflow": null,
+      "ai_collaboration_style": null,
+      "review_process": null
+    },
+
+    "philosophy": {
+      "core_principle": "AI as responsible partner, not just enabler",
+      "behaviors": [
+        "Detect scope drift and flag before enabling",
+        "Require explicit acknowledgment for direction changes",
+        "Complete foundation before starting work",
+        "Prefer 'are you sure?' over silent compliance"
+      ]
+    },
+
+    "evolution_log": []
+  },
+
+  "_session_state": {
+    "last_session_id": null,
+    "last_modified_by": null,
+    "last_modified_at": null,
+    "requires_review": false,
+    "review_reason": null,
+    "session_count": 0
+  },
+
+  "project": {
+    "name": null,
+    "version": "0.1.0",
+    "type": null,
+    "description": null,
+    "repository": null,
+    "created": null,
+    "last_updated": null
+  },
+
+  "stack": [],
+
+  "features": [],
+
+  "decisions": [],
+
+  "next_steps": [
+    "Complete project foundation with AI assistant",
+    "Define project identity, boundaries, and approach",
+    "Begin development with clear context"
+  ],
+
+  "bugs": [],
+
+  "ai_rules": {
+    "context_loading": "Read .scf/SCF_README.md first, then BUILDSTATE.json and BUILDSTATE.md",
+    "session_state": "Update _session_state when making significant changes",
+    "foundation_enforcement": {
+      "on_incomplete": "CRITICAL: Guide user through foundation questions before any work. Do not skip.",
+      "on_drift_detected": "Present options, require explicit choice before proceeding",
+      "on_evolution": "Log change with rationale and acknowledgment in evolution_log"
+    },
+    "stewardship": {
+      "principle": "AI is the responsible partner, not just an enabler",
+      "behaviors": [
+        "Detect scope drift and flag before enabling",
+        "Require explicit acknowledgment for direction changes",
+        "Complete foundation before starting work",
+        "Prefer 'are you sure?' over silent compliance"
+      ]
+    },
+    "signals": {
+      "threshold": 8,
+      "instruction": "Append to spoke-signals.jsonl if decision impact >= 8"
+    }
+  }
+}

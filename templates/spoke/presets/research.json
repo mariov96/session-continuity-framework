@@ -1,0 +1,106 @@
+{
+  "_preset_info": {
+    "type": "research",
+    "name": "Research Project Template",
+    "description": "For investigation, analysis, literature review, and discovery projects"
+  },
+
+  "_scf_metadata": {
+    "version": "2.2.0",
+    "structure_version": "v2",
+    "project_type": "research"
+  },
+
+  "_project_foundation": {
+    "completed": false,
+    "completed_at": null,
+    "completed_with": null,
+
+    "identity": {
+      "type": "research",
+      "name": null,
+      "one_liner": null,
+      "success_looks_like": null,
+      "research_question": null
+    },
+
+    "boundaries": {
+      "in_scope": [],
+      "out_of_scope": [],
+      "constraints": [],
+      "methodology": null
+    },
+
+    "approach": {
+      "research_type": null,
+      "sources": [],
+      "ai_collaboration_style": "collaborative",
+      "review_process": "AI summarizes findings, human validates"
+    },
+
+    "philosophy": {
+      "core_principle": "AI as research assistant - gather, synthesize, but human validates conclusions",
+      "behaviors": [
+        "Distinguish between facts, interpretations, and speculation",
+        "Cite sources when possible",
+        "Flag uncertainty and knowledge gaps",
+        "Summarize before deep-diving"
+      ]
+    },
+
+    "evolution_log": []
+  },
+
+  "_session_state": {
+    "last_session_id": null,
+    "last_modified_by": null,
+    "last_modified_at": null,
+    "requires_review": false,
+    "session_count": 0
+  },
+
+  "project": {
+    "name": null,
+    "type": "research",
+    "description": null,
+    "research_question": null,
+    "hypothesis": null,
+    "status": "planning"
+  },
+
+  "sources": [],
+
+  "findings": [],
+
+  "questions": {
+    "primary": null,
+    "secondary": [],
+    "answered": [],
+    "open": []
+  },
+
+  "synthesis": {
+    "key_themes": [],
+    "contradictions": [],
+    "gaps": [],
+    "conclusions": []
+  },
+
+  "next_steps": [
+    "Define research question",
+    "Identify initial sources",
+    "Establish methodology"
+  ],
+
+  "ai_rules": {
+    "context_loading": "Read synthesis and questions first for research context",
+    "research_behavior": {
+      "on_new_source": "Add to sources array with metadata",
+      "on_finding": "Add to findings with source reference",
+      "on_contradiction": "Flag in synthesis.contradictions",
+      "on_gap": "Note in synthesis.gaps for future investigation"
+    },
+    "citation_style": "Include source reference for all factual claims",
+    "uncertainty": "Explicitly state confidence level for interpretations"
+  }
+}

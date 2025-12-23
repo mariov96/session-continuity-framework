@@ -1,0 +1,119 @@
+{
+  "_preset_info": {
+    "type": "writing",
+    "name": "Writing Project Template",
+    "description": "For documentation, articles, books, content creation, and copywriting projects"
+  },
+
+  "_scf_metadata": {
+    "version": "2.2.0",
+    "structure_version": "v2",
+    "project_type": "writing"
+  },
+
+  "_project_foundation": {
+    "completed": false,
+    "completed_at": null,
+    "completed_with": null,
+
+    "identity": {
+      "type": "writing",
+      "name": null,
+      "one_liner": null,
+      "success_looks_like": null,
+      "target_audience": null,
+      "purpose": null
+    },
+
+    "boundaries": {
+      "in_scope": [],
+      "out_of_scope": [],
+      "constraints": [],
+      "word_count_target": null,
+      "deadline": null
+    },
+
+    "approach": {
+      "writing_style": null,
+      "tone": null,
+      "format": null,
+      "ai_collaboration_style": "collaborative",
+      "review_process": "AI drafts, human edits and approves"
+    },
+
+    "philosophy": {
+      "core_principle": "AI assists with drafting and structure, human maintains voice and final approval",
+      "behaviors": [
+        "Maintain consistent voice throughout",
+        "Suggest structure before writing",
+        "Offer alternatives when uncertain",
+        "Respect style guidelines"
+      ]
+    },
+
+    "evolution_log": []
+  },
+
+  "_session_state": {
+    "last_session_id": null,
+    "last_modified_by": null,
+    "last_modified_at": null,
+    "requires_review": false,
+    "session_count": 0
+  },
+
+  "project": {
+    "name": null,
+    "type": "writing",
+    "description": null,
+    "target_audience": null,
+    "purpose": null,
+    "status": "planning"
+  },
+
+  "structure": {
+    "outline": [],
+    "chapters_or_sections": [],
+    "current_focus": null
+  },
+
+  "voice_guidelines": {
+    "tone": null,
+    "style": null,
+    "avoid": [],
+    "examples": []
+  },
+
+  "content": {
+    "drafts": [],
+    "completed_sections": [],
+    "needs_revision": []
+  },
+
+  "feedback": {
+    "reviewer_notes": [],
+    "incorporated": [],
+    "pending": []
+  },
+
+  "next_steps": [
+    "Define target audience and purpose",
+    "Create outline/structure",
+    "Establish voice guidelines"
+  ],
+
+  "ai_rules": {
+    "context_loading": "Read voice_guidelines and structure first",
+    "writing_behavior": {
+      "before_drafting": "Confirm understanding of section purpose",
+      "during_drafting": "Maintain consistent voice and tone",
+      "on_uncertainty": "Offer 2-3 alternatives for human selection",
+      "on_completion": "Summarize changes and flag areas needing review"
+    },
+    "editing": {
+      "preserve_voice": "Don't change author's distinctive style",
+      "suggest_dont_change": "Offer suggestions as comments, not direct edits",
+      "explain_changes": "Always explain the reasoning behind suggestions"
+    }
+  }
+}

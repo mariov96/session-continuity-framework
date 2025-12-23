@@ -1,0 +1,8 @@
+# SCF Ignore File
+# Projects in this directory should NOT be discovered by recon.py
+
+# Ignore all test projects
+test-project/
+**/test-*
+
+# This is for internal testing only

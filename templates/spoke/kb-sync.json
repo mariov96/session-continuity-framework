@@ -1,0 +1,11 @@
+{
+  "hub_kb_version": null,
+  "spoke_kb_version": null,
+  "last_sync_date": null,
+  "sync_method": null,
+  "learnings_received": [],
+  "_instructions": {
+    "for_llms": "This file tracks sync status with your hub. Run 'scf sync' to update.",
+    "note": "Updated automatically by SCF CLI"
+  }
+}
