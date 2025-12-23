@@ -2268,7 +2268,7 @@ class SCFHubMenu:
                     if p['name'] == proj['name']:
                         p['scf_enabled'] = True
                         break
-                self._save_registry(registry)
+                self.save_registry(registry)
 
                 if added:
                     print(f"✅ Added {len(added)} file(s)")
@@ -2325,7 +2325,7 @@ class SCFHubMenu:
                         if p['name'] == proj['name']:
                             p['last_sync'] = datetime.now(timezone.utc).isoformat()
                             break
-                    self._save_registry(registry)
+                    self.save_registry(registry)
                     print("✅")
                 else:
                     print(f"⚠️  {result.stderr[:50] if result.stderr else 'Unknown error'}")
