@@ -4,11 +4,48 @@
     "structure_version": "v2",
     "description": "SCF-enabled project with context persistence",
     "framework_path": null,
-    "hub_path": null,
-    "_paths_note": "framework_path: where SCF scripts live. hub_path: where your learnings live. Set via 'scf init --guided'",
-    "last_sync_date": null,
-    "hub_kb_version": null,
-    "spoke_kb_version": null
+    "hub_path": null
+  },
+
+  "_scf_bootstrap": {
+    "_purpose": "Instructions for AI assistants to find or create SCF components",
+
+    "find_framework": {
+      "check_order": [
+        "1. Read framework_path from _scf_metadata above",
+        "2. Check if 'scf' command is in PATH",
+        "3. Look for ~/projects/session-continuity-framework",
+        "4. Look for ~/.scf-framework",
+        "5. Search for directory containing 'scf' CLI and 'teach.py'"
+      ],
+      "if_not_found": "Ask user: 'Where is your SCF framework installed? (git clone https://github.com/mariov96/session-continuity-framework)'"
+    },
+
+    "find_hub": {
+      "check_order": [
+        "1. Read hub_path from _scf_metadata above",
+        "2. Look for ~/scf-hub",
+        "3. Look for ~/.scf-hub",
+        "4. Check framework's connected_spokes for this project"
+      ],
+      "if_not_found": "Run: cd <framework_path> && ./scf hub create"
+    },
+
+    "create_hub": {
+      "requires": "framework_path must be set",
+      "command": "cd <framework_path> && ./scf hub create --guided",
+      "what_it_creates": [
+        "~/scf-hub/ (or user-chosen path)",
+        "hub-profile.json (user preferences)",
+        ".scf/ (hub's own buildstate)",
+        ".scf-registry/ (spoke tracking)",
+        "learnings/ (aggregated patterns)"
+      ]
+    },
+
+    "update_paths": {
+      "after_discovery": "Update framework_path and hub_path in _scf_metadata"
+    }
   },
 
   "_project_foundation": {

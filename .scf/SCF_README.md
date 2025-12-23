@@ -298,6 +298,39 @@ echo "Reminder: Update .scf/spoke-signals.jsonl if you made high-impact changes"
 
 ---
 
+## 🔧 THIS IS THE FRAMEWORK
+
+**Important:** This project IS the SCF framework itself - the source of all templates and tools.
+
+### What This Repo Provides
+- `./scf` - Unified CLI for all SCF operations
+- `teach.py` - Initialize and update spoke projects
+- `recon.py` - Discover and scan projects
+- `templates/spoke/` - Templates for new projects
+- `templates/hub/` - Templates for hub creation
+
+### Key Commands (run from this directory)
+```bash
+./scf hub create          # Create a personal hub
+./scf hub status          # Check hub health
+./scf hub locate          # Find where hub is
+
+./scf init <path>         # Add SCF to a project
+./scf init <path> --guided # Guided foundation setup
+./scf sync                # Sync spoke with hub
+./scf sync --all          # Sync all spokes
+```
+
+### Connected Components
+- **Hub:** ~/scf-hub (user's personal learnings)
+- **Spokes:** Individual projects using SCF
+
+### For Contributors
+This repo uses SCF to track its own development (dogfooding).
+Check `.scf/BUILDSTATE.json` for current project state.
+
+---
+
 **Last updated by hub:** {{LAST_UPDATED}}
 **Via:** teach.py
 

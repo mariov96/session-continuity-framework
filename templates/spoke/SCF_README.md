@@ -251,4 +251,40 @@ scf drift       - Check for scope drift
 
 ---
 
+## SCF Ecosystem Discovery
+
+If you need to find or interact with other SCF components:
+
+### Finding the Framework
+Check `_scf_metadata.framework_path` in BUILDSTATE.json, or:
+1. Check if `scf` command is in PATH
+2. Look for `~/projects/session-continuity-framework`
+3. Look for `~/.scf-framework`
+4. Ask user: "Where is your SCF framework installed?"
+
+### Finding the Hub
+Check `_scf_metadata.hub_path` in BUILDSTATE.json, or:
+1. Look for `~/scf-hub`
+2. Look for `~/.scf-hub`
+3. Ask user or create one: `cd <framework> && ./scf hub create`
+
+### Creating a Hub (if none exists)
+```bash
+cd <framework_path>
+./scf hub create --guided
+```
+
+This creates your personal hub for cross-project learnings.
+
+### Useful Commands
+```bash
+# From framework directory:
+./scf hub status          # Check hub health
+./scf sync --all          # Sync all spokes
+./scf init <path>         # Add new spoke
+./scf hub locate          # Find hub location
+```
+
+---
+
 *This file is part of the SCF spoke template. Updated by hub via `scf sync`.*

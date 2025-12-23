@@ -1,4 +1,28 @@
 {
+  "_scf_bootstrap": {
+    "_purpose": "Instructions for AI assistants working with this hub",
+
+    "find_framework": {
+      "check_order": [
+        "1. Read framework_path from hub_config below",
+        "2. Check if 'scf' command is in PATH",
+        "3. Look for ~/projects/session-continuity-framework",
+        "4. Look for ~/.scf-framework"
+      ],
+      "if_not_found": "Ask user: 'Where is your SCF framework? (git clone https://github.com/mariov96/session-continuity-framework)'",
+      "after_found": "Update framework_path in hub_config"
+    },
+
+    "update_hub": {
+      "command": "cd <framework_path> && ./scf hub status",
+      "sync_spokes": "cd <framework_path> && ./scf sync --all"
+    },
+
+    "add_spoke": {
+      "command": "cd <framework_path> && ./scf init <project_path> --guided"
+    }
+  },
+
   "user": {
     "name": null,
     "email": null,
