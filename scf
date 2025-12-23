@@ -708,70 +708,188 @@ class SCFHubMenu:
                     self.view_project(projects[int(choice) - 1])
 
     def add_project(self):
-        """Add a project interactively"""
+        """Add projects by scanning a directory"""
         self.clear_screen()
         print("""
 ╔══════════════════════════════════════════════════════════════╗
-║                    ➕ Add Project                             ║
+║                    ➕ Add Projects                            ║
 ╚══════════════════════════════════════════════════════════════╝
+
+   Enter a directory to scan for projects.
+   Examples: ~/projects, ~/code, ~/work
 """)
-        path_input = input("   Enter project path (or 'c' to cancel): ").strip()
+        path_input = input("   Scan path (or 'c' to cancel): ").strip()
 
         if path_input.lower() == 'c':
             return
 
-        proj_path = Path(path_input).expanduser().resolve()
+        scan_path = Path(path_input).expanduser().resolve()
 
-        if not proj_path.exists():
-            print(f"\n   ❌ Path not found: {proj_path}")
+        if not scan_path.exists() or not scan_path.is_dir():
+            print(f"\n   ❌ Directory not found: {scan_path}")
             self.wait_for_enter()
             return
 
-        # Load registry
+        # Scan for projects
+        print(f"\n   🔍 Scanning {scan_path}...")
+        discovered = self._quick_scan(scan_path)
+
+        if not discovered:
+            print("\n   No projects found in this directory.")
+            self.wait_for_enter()
+            return
+
+        # Filter out already registered
         registry = self.load_registry()
         existing = {p['path'] for p in registry.get('projects', [])}
+        new_projects = [p for p in discovered if p['path'] not in existing]
 
-        if str(proj_path) in existing:
-            print(f"\n   ⚠️  Project already registered: {proj_path.name}")
+        if not new_projects:
+            print("\n   All projects in this directory are already registered.")
             self.wait_for_enter()
             return
 
-        # Detect project info
-        is_scf = (proj_path / '.scf').exists() or (proj_path / 'buildstate.json').exists()
+        # Show found projects
+        self.clear_screen()
+        print(f"""
+╔══════════════════════════════════════════════════════════════╗
+║                    📂 Found {len(new_projects)} Projects                        ║
+╚══════════════════════════════════════════════════════════════╝
+""")
+        for i, proj in enumerate(new_projects, 1):
+            status = "🌟" if proj.get('scf_enabled') else "📁"
+            print(f"   {i:2}. {status} {proj['name']}")
+            if proj.get('description'):
+                print(f"       └─ {proj['description'][:50]}")
 
-        proj_info = {
-            'name': proj_path.name,
-            'path': str(proj_path),
-            'type': 'unknown',
-            'scf_enabled': is_scf,
-            'added_at': datetime.now(timezone.utc).isoformat(),
-            'last_sync': None
-        }
+        print(f"""
+   ─────────────────────────────────────
+   Enter numbers to add (e.g., 1,3,5 or 1-5)
+   'a' to add all, 'c' to cancel
+""")
+        choice = input("   Selection: ").strip().lower()
 
-        # Read SCF details if available
-        if is_scf:
-            for bs_path in [proj_path / '.scf' / 'BUILDSTATE.json', proj_path / 'buildstate.json']:
-                if bs_path.exists():
-                    try:
-                        with open(bs_path) as f:
-                            data = json.load(f)
-                        proj_info['type'] = data.get('project', {}).get('type', 'unknown')
+        if choice == 'c':
+            return
 
-                        # Update spoke's hub_path
-                        if '_scf_metadata' in data:
-                            data['_scf_metadata']['hub_path'] = str(self.hub_path)
-                            with open(bs_path, 'w') as f:
-                                json.dump(data, f, indent=2)
-                        break
-                    except:
-                        pass
+        # Parse selection
+        selected = []
+        if choice == 'a':
+            selected = new_projects
+        else:
+            try:
+                indices = self._parse_selection(choice, len(new_projects))
+                selected = [new_projects[i] for i in indices]
+            except:
+                print("\n   ❌ Invalid selection")
+                self.wait_for_enter()
+                return
 
-        registry['projects'].append(proj_info)
+        if not selected:
+            return
+
+        # Add selected projects
+        added_count = 0
+        for proj in selected:
+            proj_path = Path(proj['path'])
+
+            proj_info = {
+                'name': proj['name'],
+                'path': proj['path'],
+                'type': proj.get('project_type', 'unknown'),
+                'scf_enabled': proj.get('scf_enabled', False),
+                'added_at': datetime.now(timezone.utc).isoformat(),
+                'last_sync': None
+            }
+
+            # Update spoke's hub_path if SCF-enabled
+            if proj.get('scf_enabled'):
+                for bs_path in [proj_path / '.scf' / 'BUILDSTATE.json', proj_path / 'buildstate.json']:
+                    if bs_path.exists():
+                        try:
+                            with open(bs_path) as f:
+                                data = json.load(f)
+                            if '_scf_metadata' in data:
+                                data['_scf_metadata']['hub_path'] = str(self.hub_path)
+                                with open(bs_path, 'w') as f:
+                                    json.dump(data, f, indent=2)
+                            break
+                        except:
+                            pass
+
+            registry['projects'].append(proj_info)
+            added_count += 1
+
         self.save_registry(registry)
-
-        status = "🌟 SCF-enabled" if is_scf else "📁 Regular"
-        print(f"\n   ✅ Added: {proj_path.name} ({status})")
+        print(f"\n   ✅ Added {added_count} projects")
         self.wait_for_enter()
+
+    def _quick_scan(self, scan_path: Path) -> list:
+        """Quick scan a directory for projects"""
+        discovered = []
+
+        try:
+            for item in scan_path.iterdir():
+                if not item.is_dir() or item.name.startswith('.'):
+                    continue
+
+                is_git = (item / '.git').exists()
+                is_scf = (item / '.scf').exists() or (item / 'buildstate.json').exists()
+                has_package = (item / 'package.json').exists()
+                has_pyproject = (item / 'pyproject.toml').exists() or (item / 'setup.py').exists()
+                has_cargo = (item / 'Cargo.toml').exists()
+
+                if is_git or is_scf or has_package or has_pyproject or has_cargo:
+                    proj_info = {
+                        'name': item.name,
+                        'path': str(item.resolve()),
+                        'scf_enabled': is_scf,
+                        'description': None,
+                        'project_type': None
+                    }
+
+                    # Read SCF details if available
+                    if is_scf:
+                        for bs_path in [item / '.scf' / 'BUILDSTATE.json', item / 'buildstate.json']:
+                            if bs_path.exists():
+                                try:
+                                    with open(bs_path) as f:
+                                        data = json.load(f)
+                                    if '_project_foundation' in data:
+                                        foundation = data['_project_foundation']
+                                        if foundation.get('identity'):
+                                            proj_info['description'] = foundation['identity'].get('one_liner')
+                                            proj_info['project_type'] = foundation['identity'].get('type')
+                                    elif 'project' in data:
+                                        proj_info['description'] = data['project'].get('description')
+                                        proj_info['project_type'] = data['project'].get('type')
+                                    break
+                                except:
+                                    pass
+
+                    discovered.append(proj_info)
+        except PermissionError:
+            pass
+
+        return sorted(discovered, key=lambda x: (not x['scf_enabled'], x['name'].lower()))
+
+    def _parse_selection(self, selection: str, max_val: int) -> list:
+        """Parse selection like '1,3,5' or '1-5' or '1,3-5'"""
+        indices = set()
+        parts = selection.replace(' ', '').split(',')
+
+        for part in parts:
+            if '-' in part:
+                start, end = part.split('-', 1)
+                for i in range(int(start), int(end) + 1):
+                    if 1 <= i <= max_val:
+                        indices.add(i - 1)
+            elif part.isdigit():
+                i = int(part)
+                if 1 <= i <= max_val:
+                    indices.add(i - 1)
+
+        return sorted(indices)
 
     def remove_project(self, projects: list):
         """Remove a project interactively"""
