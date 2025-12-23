@@ -660,6 +660,21 @@ class SCFHubMenu:
             registry = self.load_registry()
             projects = registry.get('projects', [])
 
+            # Quick refresh of SCF status for each project
+            status_changed = False
+            for proj in projects:
+                proj_path = Path(proj.get('path', '')).expanduser()
+                if proj_path.exists():
+                    current_scf = ((proj_path / '.scf').exists() or
+                                   (proj_path / 'buildstate.json').exists() or
+                                   (proj_path / 'BUILDSTATE.json').exists())
+                    if proj.get('scf_enabled') != current_scf:
+                        proj['scf_enabled'] = current_scf
+                        status_changed = True
+
+            if status_changed:
+                self.save_registry(registry)
+
             print(f"""
 ╔══════════════════════════════════════════════════════════════╗
 ║                    📁 Projects ({len(projects)})                          ║
@@ -679,11 +694,14 @@ class SCFHubMenu:
                 elif choice in ('b', 'q'):
                     return
             else:
-                # List all projects
+                # List all projects with size info if available
                 for i, proj in enumerate(projects, 1):
                     status = "🌟" if proj.get('scf_enabled') else "📁"
                     group = f" [{proj.get('group', '')}]" if proj.get('group') else ""
-                    print(f"   {i:2}. {status} {proj['name']}{group}")
+                    size_info = ""
+                    if proj.get('file_count'):
+                        size_info = f" ({proj['file_count']} files)"
+                    print(f"   {i:2}. {status} {proj['name']}{group}{size_info}")
 
                 print(f"""
    ─────────────────────────────────────
@@ -1281,6 +1299,20 @@ class SCFHubMenu:
 
         return sorted(discovered, key=lambda x: (not x['scf_enabled'], x['name'].lower()))
 
+    def _format_size(self, size_bytes: int) -> str:
+        """Format bytes to human readable string"""
+        if size_bytes < 0:
+            sign = "-"
+            size_bytes = abs(size_bytes)
+        else:
+            sign = ""
+
+        for unit in ['B', 'KB', 'MB', 'GB']:
+            if abs(size_bytes) < 1024:
+                return f"{sign}{size_bytes:.1f}{unit}"
+            size_bytes /= 1024
+        return f"{sign}{size_bytes:.1f}TB"
+
     def _parse_selection(self, selection: str, max_val: int, default_all: bool = True) -> list:
         """Parse selection like '1,3,5' or '1-5' or '1,3-5' or 'a' for all
 
@@ -1413,6 +1445,25 @@ class SCFHubMenu:
                 profile['added_at'] = proj.get('added_at')
                 profile['last_sync'] = proj.get('last_sync')
 
+                # Track changes
+                changes = []
+                old_scf = proj.get('scf_enabled', False)
+                new_scf = profile.get('scf_enabled', False)
+                if old_scf != new_scf:
+                    changes.append(f"SCF: {'📁→🌟' if new_scf else '🌟→📁'}")
+
+                old_size = proj.get('size_bytes', 0)
+                new_size = profile.get('size_bytes', 0)
+                if old_size and new_size and abs(new_size - old_size) > 1024:
+                    diff = new_size - old_size
+                    changes.append(f"Size: {'+' if diff > 0 else ''}{self._format_size(diff)}")
+
+                old_files = proj.get('file_count', 0)
+                new_files = profile.get('file_count', 0)
+                if old_files and new_files and old_files != new_files:
+                    diff = new_files - old_files
+                    changes.append(f"Files: {'+' if diff > 0 else ''}{diff}")
+
                 # Update in registry
                 for i, p in enumerate(registry['projects']):
                     if p.get('path') == proj.get('path') or p.get('name') == proj.get('name'):
@@ -1423,12 +1474,18 @@ class SCFHubMenu:
                 print("✅")
 
                 # Show what was detected
+                print(f"       📊 {profile.get('file_count', 0)} files, {self._format_size(profile.get('size_bytes', 0))}")
+                if profile.get('created_at'):
+                    created = profile['created_at'][:10]  # Just date part
+                    print(f"       📅 Started: {created}")
                 if profile.get('languages'):
-                    print(f"       Languages: {', '.join(profile['languages'][:3])}")
-                if profile.get('frameworks'):
-                    print(f"       Frameworks: {', '.join(profile['frameworks'][:3])}")
-                if profile.get('description'):
-                    print(f"       Description: {profile['description'][:50]}...")
+                    print(f"       💻 {', '.join(profile['languages'][:3])}", end="")
+                    if profile.get('frameworks'):
+                        print(f" + {', '.join(profile['frameworks'][:2])}")
+                    else:
+                        print()
+                if changes:
+                    print(f"       🔄 Changed: {', '.join(changes)}")
 
             except Exception as e:
                 print(f"❌ {e}")
@@ -1450,8 +1507,49 @@ class SCFHubMenu:
             'frameworks': [],
             'has_tests': False,
             'has_ci': False,
+            'size_bytes': 0,
+            'file_count': 0,
+            'created_at': None,
             'last_scanned': datetime.now(timezone.utc).isoformat()
         }
+
+        # Get folder creation time (earliest file/folder mtime as proxy)
+        try:
+            # Use .git creation or folder stat
+            git_dir = proj_path / '.git'
+            if git_dir.exists():
+                profile['created_at'] = datetime.fromtimestamp(
+                    git_dir.stat().st_mtime, tz=timezone.utc
+                ).isoformat()
+            else:
+                profile['created_at'] = datetime.fromtimestamp(
+                    proj_path.stat().st_ctime, tz=timezone.utc
+                ).isoformat()
+        except:
+            pass
+
+        # Calculate size and file count (excluding .git, node_modules, etc.)
+        try:
+            total_size = 0
+            file_count = 0
+            skip_dirs = {'.git', 'node_modules', '__pycache__', '.venv', 'venv',
+                        'dist', 'build', '.next', 'target', '.cache'}
+
+            for item in proj_path.rglob('*'):
+                # Skip large dependency/build directories
+                if any(skip in item.parts for skip in skip_dirs):
+                    continue
+                if item.is_file():
+                    try:
+                        total_size += item.stat().st_size
+                        file_count += 1
+                    except:
+                        pass
+
+            profile['size_bytes'] = total_size
+            profile['file_count'] = file_count
+        except:
+            pass
 
         # Check SCF status
         profile['scf_enabled'] = ((proj_path / '.scf').exists() or
