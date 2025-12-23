@@ -709,6 +709,7 @@ class SCFHubMenu:
    r. 🔄 Rescan project(s)
    d. 🗑️  Delete a project
    v. 👁️  View project details
+   l. 📋 List verbose (detailed view)
 
    b. Back to main menu
 """)
@@ -726,8 +727,84 @@ class SCFHubMenu:
                     self.remove_project(projects)
                 elif choice == 'v':
                     self.view_project_select(projects)
+                elif choice == 'l':
+                    self.list_projects_verbose(projects)
                 elif choice.isdigit() and 1 <= int(choice) <= len(projects):
                     self.view_project(projects[int(choice) - 1])
+
+    def list_projects_verbose(self, projects: list):
+        """Show detailed view of all projects"""
+        self.clear_screen()
+        print(f"""
+╔══════════════════════════════════════════════════════════════╗
+║              📋 Projects - Detailed View ({len(projects)})                 ║
+╚══════════════════════════════════════════════════════════════╝
+""")
+        # Summary stats
+        scf_count = sum(1 for p in projects if p.get('scf_enabled'))
+        total_files = sum(p.get('file_count', 0) for p in projects)
+        total_size = sum(p.get('size_bytes', 0) for p in projects)
+
+        print(f"   Summary: {scf_count} SCF-enabled, {len(projects) - scf_count} regular")
+        print(f"   Total: {total_files:,} files, {self._format_size(total_size)}")
+        print(f"   ─────────────────────────────────────────────────────────\n")
+
+        for i, proj in enumerate(projects, 1):
+            status = "🌟" if proj.get('scf_enabled') else "📁"
+            group = f"[{proj.get('group')}] " if proj.get('group') else ""
+
+            print(f"   {i:2}. {status} {group}{proj['name']}")
+            print(f"       Path: {proj.get('path', 'unknown')}")
+
+            # Size and files
+            files = proj.get('file_count', 0)
+            size = proj.get('size_bytes', 0)
+            if files or size:
+                print(f"       Size: {self._format_size(size)} ({files:,} files)")
+
+            # Languages and frameworks
+            langs = proj.get('languages', [])
+            frameworks = proj.get('frameworks', [])
+            if langs:
+                tech = ', '.join(langs[:3])
+                if frameworks:
+                    tech += f" + {', '.join(frameworks[:2])}"
+                print(f"       Tech: {tech}")
+
+            # Dates
+            created = proj.get('created_at', '')[:10] if proj.get('created_at') else None
+            scanned = proj.get('last_scanned', '')[:10] if proj.get('last_scanned') else None
+            added = proj.get('added_at', '')[:10] if proj.get('added_at') else None
+
+            dates = []
+            if created:
+                dates.append(f"Started: {created}")
+            if added:
+                dates.append(f"Added: {added}")
+            if scanned:
+                dates.append(f"Scanned: {scanned}")
+            if dates:
+                print(f"       Dates: {' | '.join(dates)}")
+
+            # Features
+            features = []
+            if proj.get('has_tests'):
+                features.append("tests")
+            if proj.get('has_ci'):
+                features.append("CI/CD")
+            if proj.get('scf_enabled'):
+                features.append("SCF")
+            if features:
+                print(f"       Features: {', '.join(features)}")
+
+            # Description
+            if proj.get('description'):
+                desc = proj['description'][:60] + "..." if len(proj.get('description', '')) > 60 else proj['description']
+                print(f"       Desc: {desc}")
+
+            print()  # Blank line between projects
+
+        self.wait_for_enter()
 
     def groups_menu(self):
         """Groups management menu"""
