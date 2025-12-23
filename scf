@@ -686,8 +686,8 @@ class SCFHubMenu:
 
                 print(f"""
    ─────────────────────────────────────
-   a. ➕ Add project
-   r. ➖ Remove project
+   a. ➕ Add projects (scan a folder)
+   d. 🗑️  Delete/remove a project
    v. 👁️  View project details
 
    b. Back to main menu
@@ -700,7 +700,7 @@ class SCFHubMenu:
                     return
                 elif choice == 'a':
                     self.add_project()
-                elif choice == 'r':
+                elif choice in ('d', 'r'):  # delete or remove
                     self.remove_project(projects)
                 elif choice == 'v':
                     self.view_project_select(projects)
@@ -710,20 +710,48 @@ class SCFHubMenu:
     def add_project(self):
         """Add projects by scanning a directory"""
         self.clear_screen()
+
+        # Find common project directories
+        common_paths = []
+        for p in [Path.home() / 'projects', Path.home() / 'code', Path.home() / 'work',
+                  Path.home() / 'dev', Path.home() / 'src', Path.home() / 'repos']:
+            if p.exists() and p.is_dir():
+                common_paths.append(p)
+
         print("""
 ╔══════════════════════════════════════════════════════════════╗
 ║                    ➕ Add Projects                            ║
 ╚══════════════════════════════════════════════════════════════╝
-
-   Enter a directory to scan for projects.
-   Examples: ~/projects, ~/code, ~/work
 """)
-        path_input = input("   Scan path (or 'c' to cancel): ").strip()
+        if common_paths:
+            print("   Found project directories:\n")
+            for i, p in enumerate(common_paths, 1):
+                # Count projects in each
+                try:
+                    count = sum(1 for item in p.iterdir() if item.is_dir() and not item.name.startswith('.'))
+                except:
+                    count = 0
+                print(f"   {i}. {p}  ({count} folders)")
+            print(f"\n   Or enter a custom path")
+            print(f"\n   c. Cancel\n")
 
-        if path_input.lower() == 'c':
-            return
+            choice = input("   Selection: ").strip().lower()
 
-        scan_path = Path(path_input).expanduser().resolve()
+            if choice == 'c':
+                return
+            elif choice.isdigit() and 1 <= int(choice) <= len(common_paths):
+                scan_path = common_paths[int(choice) - 1]
+            else:
+                scan_path = Path(choice).expanduser().resolve()
+        else:
+            print("   Enter a directory to scan for projects.")
+            print("   Examples: ~/projects, ~/code, ~/work\n")
+            path_input = input("   Scan path (or 'c' to cancel): ").strip()
+
+            if path_input.lower() == 'c':
+                return
+
+            scan_path = Path(path_input).expanduser().resolve()
 
         if not scan_path.exists() or not scan_path.is_dir():
             print(f"\n   ❌ Directory not found: {scan_path}")
@@ -753,12 +781,19 @@ class SCFHubMenu:
         self.clear_screen()
         print(f"""
 ╔══════════════════════════════════════════════════════════════╗
-║                    📂 Found {len(new_projects)} Projects                        ║
+║              📂 Found {len(new_projects)} Projects in {scan_path.name}/              ║
 ╚══════════════════════════════════════════════════════════════╝
 """)
         for i, proj in enumerate(new_projects, 1):
             status = "🌟" if proj.get('scf_enabled') else "📁"
+            # Show relative path from scan_path or full path
+            proj_path = Path(proj['path'])
+            try:
+                rel_path = proj_path.relative_to(scan_path.parent)
+            except ValueError:
+                rel_path = proj_path
             print(f"   {i:2}. {status} {proj['name']}")
+            print(f"       {rel_path}")
             if proj.get('description'):
                 print(f"       └─ {proj['description'][:50]}")
 
@@ -893,10 +928,23 @@ class SCFHubMenu:
 
     def remove_project(self, projects: list):
         """Remove a project interactively"""
-        print("\n   Enter project number to remove (or 'c' to cancel): ", end="")
-        choice = input().strip()
+        self.clear_screen()
+        print("""
+╔══════════════════════════════════════════════════════════════╗
+║                    🗑️  Delete Project                         ║
+╚══════════════════════════════════════════════════════════════╝
 
-        if choice.lower() == 'c':
+   Select a project to remove from hub:
+""")
+        for i, proj in enumerate(projects, 1):
+            status = "🌟" if proj.get('scf_enabled') else "📁"
+            print(f"   {i:2}. {status} {proj['name']}")
+            print(f"       {proj['path']}")
+
+        print("\n   c. Cancel\n")
+        choice = input("   Selection: ").strip().lower()
+
+        if choice == 'c':
             return
 
         if not choice.isdigit() or not (1 <= int(choice) <= len(projects)):
@@ -905,7 +953,9 @@ class SCFHubMenu:
             return
 
         proj = projects[int(choice) - 1]
-        confirm = input(f"\n   Remove '{proj['name']}'? [y/N]: ").strip().lower()
+        print(f"\n   ⚠️  This removes '{proj['name']}' from hub tracking.")
+        print(f"   (Project files on disk are NOT deleted)")
+        confirm = input(f"\n   Confirm delete? [y/N]: ").strip().lower()
 
         if confirm == 'y':
             registry = self.load_registry()
