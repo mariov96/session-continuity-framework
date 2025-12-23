@@ -688,7 +688,8 @@ class SCFHubMenu:
                 print(f"""
    ─────────────────────────────────────
    a. ➕ Add projects (scan a folder)
-   d. 🗑️  Delete/remove a project
+   r. 🔄 Rescan project(s)
+   d. 🗑️  Delete a project
    v. 👁️  View project details
 
    b. Back to main menu
@@ -701,7 +702,9 @@ class SCFHubMenu:
                     return
                 elif choice == 'a':
                     self.add_project()
-                elif choice in ('d', 'r'):  # delete or remove
+                elif choice == 'r':
+                    self.rescan_projects(projects)
+                elif choice == 'd':
                     self.remove_project(projects)
                 elif choice == 'v':
                     self.view_project_select(projects)
@@ -1191,23 +1194,22 @@ class SCFHubMenu:
         if not selected:
             return
 
-        # Add selected projects
+        # Add selected projects with full profile
         added_count = 0
         for proj in selected:
             proj_path = Path(proj['path'])
 
-            proj_info = {
-                'name': proj['name'],
-                'path': proj['path'],
-                'type': proj.get('project_type', 'unknown'),
-                'scf_enabled': proj.get('scf_enabled', False),
-                'added_at': datetime.now(timezone.utc).isoformat(),
-                'last_sync': None
-            }
+            # Build comprehensive profile
+            proj_info = self._build_project_profile(proj_path)
+            proj_info['added_at'] = datetime.now(timezone.utc).isoformat()
+            proj_info['last_sync'] = None
 
             # Update spoke's hub_path if SCF-enabled
-            if proj.get('scf_enabled'):
-                for bs_path in [proj_path / '.scf' / 'BUILDSTATE.json', proj_path / 'buildstate.json']:
+            if proj_info.get('scf_enabled'):
+                for bs_path in [proj_path / '.scf' / 'BUILDSTATE.json',
+                               proj_path / '.scf' / 'buildstate.json',
+                               proj_path / 'BUILDSTATE.json',
+                               proj_path / 'buildstate.json']:
                     if bs_path.exists():
                         try:
                             with open(bs_path) as f:
@@ -1222,6 +1224,13 @@ class SCFHubMenu:
 
             registry['projects'].append(proj_info)
             added_count += 1
+
+            # Show what was detected
+            print(f"   ✅ {proj_info['name']}")
+            if proj_info.get('languages'):
+                print(f"      Languages: {', '.join(proj_info['languages'][:3])}")
+            if proj_info.get('frameworks'):
+                print(f"      Frameworks: {', '.join(proj_info['frameworks'][:3])}")
 
         self.save_registry(registry)
         print(f"\n   ✅ Added {added_count} projects")
@@ -1357,6 +1366,211 @@ class SCFHubMenu:
             print("\n   Cancelled.")
 
         self.wait_for_enter()
+
+    def rescan_projects(self, projects: list):
+        """Rescan project(s) to rebuild their profiles"""
+        self.clear_screen()
+        print("""
+╔══════════════════════════════════════════════════════════════╗
+║                    🔄 Rescan Projects                        ║
+╚══════════════════════════════════════════════════════════════╝
+
+   Select project(s) to rescan and rebuild profile:
+""")
+        for i, proj in enumerate(projects, 1):
+            status = "🌟" if proj.get('scf_enabled') else "📁"
+            print(f"   {i:2}. {status} {proj['name']}")
+            print(f"       {proj.get('path', 'unknown')}")
+
+        print(f"\n   Enter selection (1,3,5 or 1-{len(projects)} or 'a' for all)")
+        print("   Or 'c' to cancel\n")
+
+        choice = input("   Selection: ").strip().lower()
+
+        if choice == 'c':
+            return
+
+        indices = self._parse_multi_select(choice, len(projects))
+        if not indices:
+            print("   ❌ No valid selection")
+            self.wait_for_enter()
+            return
+
+        selected = [projects[i] for i in indices]
+        print(f"\n   🔄 Rescanning {len(selected)} project(s)...\n")
+
+        registry = self.load_registry()
+        updated_count = 0
+
+        for proj in selected:
+            proj_path = Path(proj.get('path', '')).expanduser()
+            print(f"   📂 {proj['name']}...", end=" ")
+
+            if not proj_path.exists():
+                print("❌ Path not found")
+                continue
+
+            try:
+                # Build fresh profile
+                profile = self._build_project_profile(proj_path)
+
+                # Preserve existing fields that shouldn't be overwritten
+                profile['group'] = proj.get('group')
+                profile['added_at'] = proj.get('added_at')
+                profile['last_sync'] = proj.get('last_sync')
+
+                # Update in registry
+                for i, p in enumerate(registry['projects']):
+                    if p.get('path') == proj.get('path') or p.get('name') == proj.get('name'):
+                        registry['projects'][i] = profile
+                        break
+
+                updated_count += 1
+                print("✅")
+
+                # Show what was detected
+                if profile.get('languages'):
+                    print(f"       Languages: {', '.join(profile['languages'][:3])}")
+                if profile.get('frameworks'):
+                    print(f"       Frameworks: {', '.join(profile['frameworks'][:3])}")
+                if profile.get('description'):
+                    print(f"       Description: {profile['description'][:50]}...")
+
+            except Exception as e:
+                print(f"❌ {e}")
+
+        self.save_registry(registry)
+        print(f"\n   ═══════════════════════════════════════")
+        print(f"   ✅ Updated {updated_count} project profile(s)")
+        self.wait_for_enter()
+
+    def _build_project_profile(self, proj_path: Path) -> dict:
+        """Build a comprehensive project profile by scanning the folder"""
+        profile = {
+            'name': proj_path.name,
+            'path': str(proj_path.resolve()),
+            'scf_enabled': False,
+            'description': None,
+            'project_type': None,
+            'languages': [],
+            'frameworks': [],
+            'has_tests': False,
+            'has_ci': False,
+            'last_scanned': datetime.now(timezone.utc).isoformat()
+        }
+
+        # Check SCF status
+        profile['scf_enabled'] = ((proj_path / '.scf').exists() or
+                                   (proj_path / 'buildstate.json').exists() or
+                                   (proj_path / 'BUILDSTATE.json').exists())
+
+        # Read SCF details if available
+        if profile['scf_enabled']:
+            for bs_path in [proj_path / '.scf' / 'BUILDSTATE.json',
+                           proj_path / '.scf' / 'buildstate.json',
+                           proj_path / 'BUILDSTATE.json',
+                           proj_path / 'buildstate.json']:
+                if bs_path.exists():
+                    try:
+                        data = json.loads(bs_path.read_text())
+                        if '_project_foundation' in data:
+                            foundation = data['_project_foundation']
+                            if foundation.get('identity'):
+                                profile['description'] = foundation['identity'].get('one_liner')
+                                profile['project_type'] = foundation['identity'].get('type')
+                        elif 'project' in data:
+                            profile['description'] = data['project'].get('description')
+                            profile['project_type'] = data['project'].get('type')
+                        break
+                    except:
+                        pass
+
+        # Detect languages and frameworks
+        languages = set()
+        frameworks = set()
+
+        # JavaScript/TypeScript
+        if (proj_path / 'package.json').exists():
+            languages.add('JavaScript')
+            try:
+                pkg = json.loads((proj_path / 'package.json').read_text())
+                deps = {**pkg.get('dependencies', {}), **pkg.get('devDependencies', {})}
+
+                if 'typescript' in deps or (proj_path / 'tsconfig.json').exists():
+                    languages.add('TypeScript')
+                if 'react' in deps or '@types/react' in deps:
+                    frameworks.add('React')
+                if 'next' in deps:
+                    frameworks.add('Next.js')
+                if 'vue' in deps:
+                    frameworks.add('Vue')
+                if 'express' in deps:
+                    frameworks.add('Express')
+                if 'nest' in deps or '@nestjs/core' in deps:
+                    frameworks.add('NestJS')
+
+                # Get description from package.json if not from SCF
+                if not profile['description'] and pkg.get('description'):
+                    profile['description'] = pkg['description']
+            except:
+                pass
+
+        # Python
+        if (proj_path / 'pyproject.toml').exists() or (proj_path / 'setup.py').exists() or (proj_path / 'requirements.txt').exists():
+            languages.add('Python')
+            # Check for frameworks
+            for req_file in ['requirements.txt', 'pyproject.toml', 'setup.py']:
+                req_path = proj_path / req_file
+                if req_path.exists():
+                    try:
+                        content = req_path.read_text().lower()
+                        if 'django' in content:
+                            frameworks.add('Django')
+                        if 'flask' in content:
+                            frameworks.add('Flask')
+                        if 'fastapi' in content:
+                            frameworks.add('FastAPI')
+                        if 'pytorch' in content or 'torch' in content:
+                            frameworks.add('PyTorch')
+                        if 'tensorflow' in content:
+                            frameworks.add('TensorFlow')
+                    except:
+                        pass
+
+        # Rust
+        if (proj_path / 'Cargo.toml').exists():
+            languages.add('Rust')
+
+        # Go
+        if (proj_path / 'go.mod').exists():
+            languages.add('Go')
+
+        # Java
+        if (proj_path / 'pom.xml').exists() or (proj_path / 'build.gradle').exists():
+            languages.add('Java')
+            if (proj_path / 'pom.xml').exists():
+                frameworks.add('Maven')
+            if (proj_path / 'build.gradle').exists():
+                frameworks.add('Gradle')
+
+        # Check for tests
+        test_indicators = ['test', 'tests', 'spec', 'specs', '__tests__', 'test.py', 'test.js', 'test.ts']
+        for indicator in test_indicators:
+            if (proj_path / indicator).exists():
+                profile['has_tests'] = True
+                break
+
+        # Check for CI
+        ci_indicators = ['.github/workflows', '.gitlab-ci.yml', 'Jenkinsfile', '.circleci', '.travis.yml']
+        for indicator in ci_indicators:
+            if (proj_path / indicator).exists():
+                profile['has_ci'] = True
+                break
+
+        profile['languages'] = sorted(list(languages))
+        profile['frameworks'] = sorted(list(frameworks))
+
+        return profile
 
     def view_project_select(self, projects: list):
         """Select a project to view"""
