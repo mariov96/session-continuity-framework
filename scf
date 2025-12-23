@@ -1551,19 +1551,30 @@ class SCFHubMenu:
         self.wait_for_enter()
 
     def stats_menu(self):
-        """Show detailed statistics"""
-        self.clear_screen()
-        registry = self.load_registry()
-        projects = registry.get('projects', [])
-        scf_enabled = [p for p in projects if p.get('scf_enabled')]
-        regular = [p for p in projects if not p.get('scf_enabled')]
+        """Show detailed statistics with actionable recommendations"""
+        while True:
+            self.clear_screen()
+            registry = self.load_registry()
+            projects = registry.get('projects', [])
+            scf_enabled = [p for p in projects if p.get('scf_enabled')]
+            regular = [p for p in projects if not p.get('scf_enabled')]
+            never_synced = [p for p in scf_enabled if not p.get('last_sync')]
 
-        never_synced = [p['name'] for p in scf_enabled if not p.get('last_sync')]
+            learnings_dir = self.hub_path / 'learnings'
+            learning_count = len(list(learnings_dir.glob('*.json'))) if learnings_dir.exists() else 0
 
-        learnings_dir = self.hub_path / 'learnings'
-        learning_count = len(list(learnings_dir.glob('*.json'))) if learnings_dir.exists() else 0
+            # Build actionable recommendations
+            actions = []
+            if regular:
+                actions.append(('enable', f"Enable SCF on {len(regular)} project(s)", regular))
+            if never_synced:
+                actions.append(('sync', f"Sync {len(never_synced)} project(s) that never synced", never_synced))
+            if len(projects) == 0:
+                actions.append(('scan', "Scan for projects to add", None))
+            if learning_count == 0 and scf_enabled:
+                actions.append(('learn', "Learn patterns from SCF-enabled projects", scf_enabled))
 
-        print(f"""
+            print(f"""
 ╔══════════════════════════════════════════════════════════════╗
 ║                    📊 Hub Statistics                         ║
 ╚══════════════════════════════════════════════════════════════╝
@@ -1578,21 +1589,284 @@ class SCFHubMenu:
    🧠 Learnings
    ─────────────────────────────────────
    Patterns stored:     {learning_count}
+""")
 
-   💡 Recommendations
-   ─────────────────────────────────────""")
+            if actions:
+                print("   💡 Recommended Actions")
+                print("   ─────────────────────────────────────")
+                for i, (_, desc, _) in enumerate(actions, 1):
+                    print(f"   {i}. {desc}")
+                print()
 
-        if regular:
-            print(f"   • {len(regular)} projects could be SCF-enabled")
-        if never_synced:
-            print(f"   • {len(never_synced)} projects need initial sync")
-        if not scf_enabled:
-            print(f"   • Run scan to discover more projects")
-        if learning_count == 0:
-            print(f"   • Run learn to gather patterns from projects")
+            if not actions:
+                print("   ✅ Everything looks good!")
+                print()
 
-        print("\n   b. Back")
-        self.get_choice(0)
+            print("   b. Back")
+
+            choice = self.get_choice(len(actions))
+
+            if choice == 'b':
+                return
+
+            try:
+                idx = int(choice) - 1
+                if 0 <= idx < len(actions):
+                    action_type, desc, items = actions[idx]
+                    self._execute_recommendation(action_type, items)
+            except ValueError:
+                pass
+
+    def _execute_recommendation(self, action_type: str, items):
+        """Execute a recommendation action"""
+        if action_type == 'enable':
+            self._enable_scf_batch(items)
+        elif action_type == 'sync':
+            self._sync_projects_batch(items)
+        elif action_type == 'scan':
+            self.add_project()  # Reuse add project flow which scans
+        elif action_type == 'learn':
+            self._learn_from_projects(items)
+
+    def _enable_scf_batch(self, projects: list):
+        """Enable SCF on multiple projects"""
+        self.clear_screen()
+        print("\n   🚀 Enable SCF on Projects")
+        print("   ─────────────────────────────────────\n")
+
+        for i, proj in enumerate(projects, 1):
+            print(f"   {i}. {proj['name']} ({proj.get('path', 'unknown')})")
+
+        print(f"\n   Select projects to enable (1,3,5 or 1-{len(projects)} or 'a' for all)")
+        print("   Or 'b' to go back\n")
+
+        selection = input("   > ").strip().lower()
+        if selection == 'b':
+            return
+
+        indices = self._parse_multi_select(selection, len(projects))
+        if not indices:
+            print("   No valid selection")
+            self.wait_for_enter()
+            return
+
+        selected = [projects[i] for i in indices]
+        print(f"\n   Enabling SCF on {len(selected)} project(s)...")
+
+        for proj in selected:
+            proj_path = Path(proj['path']).expanduser()
+            if proj_path.exists():
+                print(f"   • {proj['name']}...", end=" ")
+                try:
+                    # Initialize SCF in the project
+                    scf_dir = proj_path / '.scf'
+                    scf_dir.mkdir(exist_ok=True)
+
+                    # Copy templates
+                    templates_dir = self.framework_path / 'templates' / 'spoke'
+                    if templates_dir.exists():
+                        import shutil
+                        for template_file in templates_dir.glob('*'):
+                            if template_file.is_file():
+                                dest = scf_dir / template_file.name
+                                if not dest.exists():
+                                    shutil.copy(template_file, dest)
+
+                    # Update registry
+                    registry = self.load_registry()
+                    for p in registry.get('projects', []):
+                        if p['name'] == proj['name']:
+                            p['scf_enabled'] = True
+                            break
+                    self._save_registry(registry)
+
+                    print("✅")
+                except Exception as e:
+                    print(f"❌ {e}")
+            else:
+                print(f"   • {proj['name']}... ❌ Path not found")
+
+        self.wait_for_enter()
+
+    def _sync_projects_batch(self, projects: list):
+        """Sync multiple projects"""
+        self.clear_screen()
+        print("\n   🔄 Sync Projects")
+        print("   ─────────────────────────────────────\n")
+
+        for i, proj in enumerate(projects, 1):
+            print(f"   {i}. {proj['name']}")
+
+        print(f"\n   Select projects to sync (1,3,5 or 1-{len(projects)} or 'a' for all)")
+        print("   Or 'b' to go back\n")
+
+        selection = input("   > ").strip().lower()
+        if selection == 'b':
+            return
+
+        indices = self._parse_multi_select(selection, len(projects))
+        if not indices:
+            print("   No valid selection")
+            self.wait_for_enter()
+            return
+
+        selected = [projects[i] for i in indices]
+        print(f"\n   Syncing {len(selected)} project(s)...")
+
+        for proj in selected:
+            proj_path = Path(proj['path']).expanduser()
+            print(f"   • {proj['name']}...", end=" ")
+
+            if not proj_path.exists():
+                print("❌ Path not found")
+                continue
+
+            try:
+                # Run sync for this project
+                result = subprocess.run(
+                    [sys.executable, str(self.framework_path / 'scf'), 'sync', str(proj_path)],
+                    capture_output=True, text=True, timeout=60
+                )
+                if result.returncode == 0:
+                    # Update last_sync in registry
+                    registry = self.load_registry()
+                    for p in registry.get('projects', []):
+                        if p['name'] == proj['name']:
+                            p['last_sync'] = datetime.now(timezone.utc).isoformat()
+                            break
+                    self._save_registry(registry)
+                    print("✅")
+                else:
+                    print(f"⚠️  {result.stderr[:50] if result.stderr else 'Unknown error'}")
+            except subprocess.TimeoutExpired:
+                print("⚠️  Timeout")
+            except Exception as e:
+                print(f"❌ {e}")
+
+        self.wait_for_enter()
+
+    def _learn_from_projects(self, projects: list):
+        """Learn patterns from projects"""
+        self.clear_screen()
+        print("\n   🧠 Learn from Projects")
+        print("   ─────────────────────────────────────\n")
+
+        for i, proj in enumerate(projects, 1):
+            print(f"   {i}. {proj['name']}")
+
+        print(f"\n   Select projects to learn from (1,3,5 or 1-{len(projects)} or 'a' for all)")
+        print("   Or 'b' to go back\n")
+
+        selection = input("   > ").strip().lower()
+        if selection == 'b':
+            return
+
+        indices = self._parse_multi_select(selection, len(projects))
+        if not indices:
+            print("   No valid selection")
+            self.wait_for_enter()
+            return
+
+        selected = [projects[i] for i in indices]
+        print(f"\n   Learning from {len(selected)} project(s)...")
+
+        learnings_dir = self.hub_path / 'learnings'
+        learnings_dir.mkdir(exist_ok=True)
+
+        total_learnings = 0
+
+        for proj in selected:
+            proj_path = Path(proj['path']).expanduser()
+            print(f"\n   📂 {proj['name']}")
+
+            if not proj_path.exists():
+                print("      ❌ Path not found")
+                continue
+
+            # Look for signals and decisions
+            scf_dir = proj_path / '.scf'
+            buildstate_path = scf_dir / 'BUILDSTATE.json'
+            signals_path = scf_dir / 'spoke-signals.jsonl'
+
+            project_learnings = []
+
+            # Extract high-impact decisions from BUILDSTATE.json
+            if buildstate_path.exists():
+                try:
+                    buildstate = json.loads(buildstate_path.read_text())
+                    decisions = buildstate.get('decisions', [])
+                    high_impact = [d for d in decisions if d.get('impact', 0) >= 8]
+                    for decision in high_impact:
+                        project_learnings.append({
+                            'type': 'decision',
+                            'source_project': proj['name'],
+                            'source_path': str(proj_path),
+                            'date': decision.get('date'),
+                            'topic': decision.get('decision'),
+                            'rationale': decision.get('rationale'),
+                            'impact': decision.get('impact'),
+                            'learned_at': datetime.now(timezone.utc).isoformat()
+                        })
+                    if high_impact:
+                        print(f"      • Found {len(high_impact)} high-impact decisions")
+                except Exception as e:
+                    print(f"      ⚠️  Error reading BUILDSTATE: {e}")
+
+            # Extract offers from spoke-signals.jsonl
+            if signals_path.exists():
+                try:
+                    offers = []
+                    with open(signals_path) as f:
+                        for line in f:
+                            if line.strip():
+                                signal = json.loads(line)
+                                for offer in signal.get('offers', []):
+                                    if offer.get('impact', 0) >= 8:
+                                        offers.append({
+                                            'type': offer.get('type', 'pattern'),
+                                            'source_project': proj['name'],
+                                            'source_path': str(proj_path),
+                                            'date': signal.get('timestamp'),
+                                            'topic': offer.get('topic'),
+                                            'context': offer.get('context'),
+                                            'impact': offer.get('impact'),
+                                            'learned_at': datetime.now(timezone.utc).isoformat()
+                                        })
+                    project_learnings.extend(offers)
+                    if offers:
+                        print(f"      • Found {len(offers)} signaled learnings")
+                except Exception as e:
+                    print(f"      ⚠️  Error reading signals: {e}")
+
+            # Save learnings
+            if project_learnings:
+                learning_file = learnings_dir / f"{proj['name']}.json"
+                existing = []
+                if learning_file.exists():
+                    try:
+                        existing = json.loads(learning_file.read_text())
+                    except:
+                        pass
+
+                # Merge, avoiding duplicates by topic
+                existing_topics = {l.get('topic') for l in existing}
+                new_learnings = [l for l in project_learnings if l.get('topic') not in existing_topics]
+
+                if new_learnings:
+                    all_learnings = existing + new_learnings
+                    with open(learning_file, 'w') as f:
+                        json.dump(all_learnings, f, indent=2)
+                    print(f"      ✅ Saved {len(new_learnings)} new learning(s)")
+                    total_learnings += len(new_learnings)
+                else:
+                    print(f"      ℹ️  No new learnings (already captured)")
+            else:
+                print(f"      ℹ️  No high-impact learnings found")
+
+        print(f"\n   ═══════════════════════════════════════")
+        print(f"   📊 Total new learnings captured: {total_learnings}")
+
+        self.wait_for_enter()
 
     def settings_menu(self):
         """Hub settings menu"""
