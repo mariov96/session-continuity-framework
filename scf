@@ -129,12 +129,279 @@ class SCFHubManager:
         print(f"   │   └── spoke-projects.json")
         print(f"   ├── hub-profile.json       # Your preferences")
         print(f"   └── learnings/             # Cross-project patterns")
+
+        # Discover existing projects
+        if interactive:
+            self._discover_existing_projects(hub_path, registry_dir)
+
         print(f"\n🚀 Next steps:")
-        print(f"   1. Edit hub-profile.json with your details")
-        print(f"   2. Run 'scf projects scan' to discover projects")
-        print(f"   3. Run 'scf init' in any project to connect it")
+        print(f"   1. Run 'scf hub status' to see connected projects")
+        print(f"   2. Run 'scf init <path>' to add more projects")
 
         return True
+
+    def _discover_existing_projects(self, hub_path: Path, registry_dir: Path):
+        """Interactively discover and intake existing projects"""
+        print(f"\n📂 Project Discovery")
+        print(f"=" * 50)
+
+        discover = input("\nDo you have existing projects to discover? [Y/n]: ").strip().lower()
+        if discover == 'n':
+            print("   Skipping project discovery.")
+            return
+
+        # Get scan locations
+        scan_paths = []
+        print("\nEnter directories to scan for projects (one per line).")
+        print("Common locations: ~/projects, ~/code, ~/work")
+        print("Press Enter with empty line when done.\n")
+
+        while True:
+            path_input = input("   Scan path: ").strip()
+            if not path_input:
+                break
+            scan_path = Path(path_input).expanduser()
+            if scan_path.exists() and scan_path.is_dir():
+                scan_paths.append(scan_path)
+                print(f"   ✓ Added: {scan_path}")
+            else:
+                print(f"   ✗ Path not found: {scan_path}")
+
+        if not scan_paths:
+            # Default to common locations
+            default_paths = [Path.home() / 'projects', Path.home() / 'code']
+            for dp in default_paths:
+                if dp.exists():
+                    scan_paths.append(dp)
+            if scan_paths:
+                print(f"\n   Using default paths: {', '.join(str(p) for p in scan_paths)}")
+
+        if not scan_paths:
+            print("   No valid paths to scan.")
+            return
+
+        # Scan for projects
+        print(f"\n🔍 Scanning for projects...")
+        discovered = self._scan_for_projects(scan_paths)
+
+        if not discovered:
+            print("   No projects found.")
+            return
+
+        # Separate SCF-enabled from regular projects
+        scf_projects = [p for p in discovered if p.get('scf_enabled')]
+        regular_projects = [p for p in discovered if not p.get('scf_enabled')]
+
+        print(f"\n📊 Found {len(discovered)} projects:")
+        print(f"   • {len(scf_projects)} SCF-enabled (have .scf/ folder)")
+        print(f"   • {len(regular_projects)} regular projects")
+
+        # Present SCF-enabled projects first
+        if scf_projects:
+            print(f"\n🌟 SCF-Enabled Projects (already have context):")
+            print("-" * 50)
+            for proj in scf_projects:
+                self._present_project(proj, is_scf=True)
+
+        # Present regular projects
+        if regular_projects:
+            print(f"\n📁 Regular Projects (can add SCF):")
+            print("-" * 50)
+            for proj in regular_projects:
+                self._present_project(proj, is_scf=False)
+
+        # Let user select which to intake
+        print(f"\n📥 Project Intake")
+        print("-" * 50)
+        print("For each project, choose: [Y]es intake, [N]o skip, [A]ll remaining, [Q]uit\n")
+
+        intake_list = []
+        skip_remaining = False
+        intake_remaining = False
+
+        for proj in discovered:
+            if skip_remaining:
+                break
+            if intake_remaining:
+                intake_list.append(proj)
+                continue
+
+            status = "🌟 SCF" if proj.get('scf_enabled') else "📁 New"
+            print(f"{status} {proj['name']}")
+            if proj.get('scf_enabled') and proj.get('description'):
+                print(f"      └─ {proj['description'][:60]}...")
+
+            choice = input(f"   Intake? [Y/n/a/q]: ").strip().lower()
+
+            if choice == 'q':
+                skip_remaining = True
+            elif choice == 'a':
+                intake_remaining = True
+                intake_list.append(proj)
+            elif choice != 'n':
+                intake_list.append(proj)
+
+        # Register selected projects
+        if intake_list:
+            self._register_projects(registry_dir, intake_list, hub_path)
+            print(f"\n✅ Registered {len(intake_list)} projects with hub")
+        else:
+            print("\n   No projects selected for intake.")
+
+    def _scan_for_projects(self, scan_paths: list) -> list:
+        """Scan directories for projects (looks for git repos or common project markers)"""
+        discovered = []
+        seen_paths = set()
+
+        for scan_path in scan_paths:
+            # Look for immediate subdirectories that look like projects
+            try:
+                for item in scan_path.iterdir():
+                    if not item.is_dir():
+                        continue
+                    if item.name.startswith('.'):
+                        continue
+                    if str(item.resolve()) in seen_paths:
+                        continue
+
+                    # Check if it's a project
+                    is_git = (item / '.git').exists()
+                    is_scf = (item / '.scf').exists() or (item / 'buildstate.json').exists()
+                    has_package = (item / 'package.json').exists()
+                    has_pyproject = (item / 'pyproject.toml').exists() or (item / 'setup.py').exists()
+                    has_cargo = (item / 'Cargo.toml').exists()
+
+                    if is_git or is_scf or has_package or has_pyproject or has_cargo:
+                        proj_info = {
+                            'name': item.name,
+                            'path': str(item.resolve()),
+                            'scf_enabled': is_scf,
+                            'has_git': is_git,
+                            'description': None,
+                            'project_type': None
+                        }
+
+                        # If SCF-enabled, read additional details
+                        if is_scf:
+                            proj_info.update(self._read_scf_details(item))
+
+                        discovered.append(proj_info)
+                        seen_paths.add(str(item.resolve()))
+
+            except PermissionError:
+                continue
+
+        return sorted(discovered, key=lambda x: (not x['scf_enabled'], x['name'].lower()))
+
+    def _read_scf_details(self, project_path: Path) -> dict:
+        """Read details from SCF-enabled project"""
+        details = {}
+
+        # Try .scf/BUILDSTATE.json first, then buildstate.json
+        buildstate_paths = [
+            project_path / '.scf' / 'BUILDSTATE.json',
+            project_path / 'buildstate.json'
+        ]
+
+        for bs_path in buildstate_paths:
+            if bs_path.exists():
+                try:
+                    with open(bs_path) as f:
+                        data = json.load(f)
+
+                    # Extract useful info
+                    if 'project' in data:
+                        details['description'] = data['project'].get('description')
+                        details['project_type'] = data['project'].get('type')
+
+                    if '_project_foundation' in data:
+                        foundation = data['_project_foundation']
+                        if foundation.get('identity'):
+                            details['description'] = details.get('description') or foundation['identity'].get('one_liner')
+                            details['project_type'] = details.get('project_type') or foundation['identity'].get('type')
+
+                    if '_scf_metadata' in data:
+                        details['scf_version'] = data['_scf_metadata'].get('version')
+                        details['hub_path'] = data['_scf_metadata'].get('hub_path')
+
+                    break
+                except (json.JSONDecodeError, KeyError):
+                    pass
+
+        return details
+
+    def _present_project(self, proj: dict, is_scf: bool):
+        """Display project info"""
+        print(f"\n   📦 {proj['name']}")
+        print(f"      Path: {proj['path']}")
+        if is_scf:
+            if proj.get('description'):
+                print(f"      Desc: {proj['description']}")
+            if proj.get('project_type'):
+                print(f"      Type: {proj['project_type']}")
+            if proj.get('scf_version'):
+                print(f"      SCF:  v{proj['scf_version']}")
+        else:
+            markers = []
+            if proj.get('has_git'):
+                markers.append('git')
+            print(f"      Markers: {', '.join(markers) if markers else 'directory'}")
+
+    def _register_projects(self, registry_dir: Path, projects: list, hub_path: Path):
+        """Register projects in the spoke registry"""
+        registry_path = registry_dir / 'spoke-projects.json'
+
+        # Load existing registry
+        if registry_path.exists():
+            with open(registry_path) as f:
+                registry = json.load(f)
+        else:
+            registry = {"version": "1.0", "projects": [], "last_scan": None}
+
+        # Add projects
+        existing_paths = {p.get('path') for p in registry.get('projects', [])}
+
+        for proj in projects:
+            if proj['path'] not in existing_paths:
+                registry['projects'].append({
+                    'name': proj['name'],
+                    'path': proj['path'],
+                    'type': proj.get('project_type', 'unknown'),
+                    'scf_enabled': proj.get('scf_enabled', False),
+                    'added_at': datetime.now(timezone.utc).isoformat(),
+                    'last_sync': None
+                })
+
+                # Update spoke's hub_path if SCF-enabled
+                if proj.get('scf_enabled'):
+                    self._update_spoke_hub_path(Path(proj['path']), hub_path)
+
+        registry['last_scan'] = datetime.now(timezone.utc).isoformat()
+
+        with open(registry_path, 'w') as f:
+            json.dump(registry, f, indent=2)
+
+    def _update_spoke_hub_path(self, project_path: Path, hub_path: Path):
+        """Update a spoke's hub_path to point to this hub"""
+        buildstate_paths = [
+            project_path / '.scf' / 'BUILDSTATE.json',
+            project_path / 'buildstate.json'
+        ]
+
+        for bs_path in buildstate_paths:
+            if bs_path.exists():
+                try:
+                    with open(bs_path) as f:
+                        data = json.load(f)
+
+                    if '_scf_metadata' in data:
+                        data['_scf_metadata']['hub_path'] = str(hub_path)
+
+                        with open(bs_path, 'w') as f:
+                            json.dump(data, f, indent=2)
+                        break
+                except (json.JSONDecodeError, KeyError):
+                    pass
 
     def _gather_user_info(self) -> dict:
         """Interactive user info gathering"""
@@ -191,6 +458,7 @@ class SCFHubManager:
         profile['work_style']['ai_collaboration_style'] = user_info.get('style', 'collaborative')
         profile['hub_config']['created_at'] = datetime.now(timezone.utc).isoformat()
         profile['hub_config']['hub_path'] = str(hub_path)
+        profile['hub_config']['framework_path'] = str(self.framework_path)
 
         profile_path = hub_path / 'hub-profile.json'
         with open(profile_path, 'w') as f:
