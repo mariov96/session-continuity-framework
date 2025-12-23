@@ -4,26 +4,23 @@
     "structure_version": "v2",
     "description": "SCF Framework - Core code and spoke templates for AI context persistence",
     "framework_path": "~/projects/session-continuity-framework",
-    "hub_path": "~/scf-hub",
+    "hub_path": "/home/mario/scf-hub",
     "_paths_note": "This IS the framework. hub_path points to the developer's personal hub.",
     "github_repo": "mariov96/session-continuity-framework",
     "last_sync_date": "2025-12-22T00:00:00Z",
     "hub_kb_version": "2025-12-22T00:00:00Z",
     "spoke_kb_version": "2025-12-22T00:00:00Z"
   },
-
   "_project_foundation": {
     "completed": true,
     "completed_at": "2025-12-22T00:00:00Z",
     "completed_with": "Claude Opus 4.5",
-
     "identity": {
       "type": "framework",
       "name": "Session Continuity Framework (SCF)",
       "one_liner": "AI-agnostic context persistence for any knowledge work",
       "success_looks_like": "Any AI assistant can pick up any project with full context, and learnings flow across projects automatically"
     },
-
     "boundaries": {
       "in_scope": [
         "Core framework code (CLI, Python modules)",
@@ -47,14 +44,16 @@
         "Non-coding support: Works for research, writing, design - not just code"
       ]
     },
-
     "approach": {
-      "stack_or_tools": ["Python 3.7+", "JSON/JSONL", "Markdown"],
+      "stack_or_tools": [
+        "Python 3.7+",
+        "JSON/JSONL",
+        "Markdown"
+      ],
       "workflow": "Dogfooding - SCF tracks its own development",
       "ai_collaboration_style": "collaborative",
       "review_process": "AI proposes, human approves direction changes"
     },
-
     "philosophy": {
       "core_principle": "AI as responsible partner, not just enabler",
       "behaviors": [
@@ -64,7 +63,6 @@
         "Prefer 'are you sure?' over silent compliance"
       ]
     },
-
     "evolution_log": [
       {
         "date": "2025-12-22",
@@ -75,7 +73,6 @@
       }
     ]
   },
-
   "_session_state": {
     "last_session_id": "claude-opus-2025-12-22-foundation-reorganization",
     "last_modified_by": "Claude Opus 4.5",
@@ -84,7 +81,6 @@
     "review_reason": null,
     "session_count": 4
   },
-
   "project": {
     "name": "Session Continuity Framework",
     "version": "2.2.0",
@@ -94,13 +90,21 @@
     "created": "2024-11-01T00:00:00Z",
     "last_updated": "2025-12-22T00:00:00Z"
   },
-
   "stack": {
-    "core": ["Python 3.7+", "JSON/JSONL", "Markdown"],
-    "cli": ["./scf unified CLI"],
-    "structure": [".scf/", "templates/spoke/", "docs/"]
+    "core": [
+      "Python 3.7+",
+      "JSON/JSONL",
+      "Markdown"
+    ],
+    "cli": [
+      "./scf unified CLI"
+    ],
+    "structure": [
+      ".scf/",
+      "templates/spoke/",
+      "docs/"
+    ]
   },
-
   "features": [
     {
       "name": "Project Foundation System",
@@ -151,7 +155,6 @@
       "impact": 8
     }
   ],
-
   "decisions": [
     {
       "date": "2025-12-22",
@@ -189,7 +192,6 @@
       "by": "Claude Code"
     }
   ],
-
   "next_steps": [
     "Create templates/spoke/ with foundation-ready templates",
     "Update scf CLI with 'hub create' command for guided hub setup",
@@ -199,7 +201,6 @@
     "Implement incomplete foundation detection in teach.py",
     "Create non-coding project templates (research, writing, design)"
   ],
-
   "ai_rules": {
     "context_loading": "Read .scf/SCF_README.md first, then BUILDSTATE.json and BUILDSTATE.md",
     "session_state": "Update _session_state when making significant changes",

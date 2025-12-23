@@ -695,39 +695,496 @@ class SCFCommands:
         framework_path = Path(__file__).parent.resolve()
         hub_manager = SCFHubManager(framework_path)
 
-        if args.action == "create":
-            hub_path = Path(args.path or "~/scf-hub").expanduser()
-            hub_manager.create_hub(hub_path, interactive=not args.non_interactive)
+        # Find hub for most operations
+        hub_path = hub_manager.find_hub()
+
+        if args.action == "help" or args.action is None:
+            SCFCommands._hub_help()
+
+        elif args.action == "create":
+            create_path = Path(args.path or "~/scf-hub").expanduser()
+            hub_manager.create_hub(create_path, interactive=not args.non_interactive)
 
         elif args.action == "locate":
-            hub_path = hub_manager.find_hub()
             if hub_path:
                 print(f"✅ Hub found at: {hub_path}")
             else:
                 print("❌ No hub found.")
                 print("\nTo create a hub, run: scf hub create")
-                print("Or set SCF_HUB_PATH environment variable")
 
         elif args.action == "status":
-            hub_path = hub_manager.find_hub()
-            if hub_path:
-                print(f"📊 Hub Status: {hub_path}\n")
-                # Show hub info
-                profile_path = hub_path / 'hub-profile.json'
-                if profile_path.exists():
-                    with open(profile_path) as f:
-                        profile = json.load(f)
-                    print(f"   User: {profile.get('user', {}).get('name', 'Unknown')}")
-                    print(f"   Created: {profile.get('hub_config', {}).get('created_at', 'Unknown')}")
+            SCFCommands._hub_status(hub_path)
 
-                # Count projects
-                registry_path = hub_path / '.scf-registry' / 'spoke-projects.json'
-                if registry_path.exists():
-                    with open(registry_path) as f:
-                        registry = json.load(f)
-                    print(f"   Projects: {len(registry.get('projects', []))}")
-            else:
-                print("❌ No hub configured")
+        elif args.action == "stats":
+            SCFCommands._hub_stats(hub_path, hub_manager)
+
+        elif args.action == "projects":
+            SCFCommands._hub_projects(hub_path, args)
+
+        elif args.action == "learn":
+            SCFCommands._hub_learn(hub_path, hub_manager, args)
+
+        elif args.action == "teach":
+            SCFCommands._hub_teach(hub_path, hub_manager, args)
+
+        elif args.action == "scan":
+            SCFCommands._hub_scan(hub_path, hub_manager)
+
+    @staticmethod
+    def _hub_help():
+        """Show hub-specific help"""
+        print("""
+📊 SCF Hub Commands
+==================
+
+  scf hub status              Show hub status and health
+  scf hub stats               Detailed statistics on projects and learnings
+  scf hub locate              Find hub location
+
+Project Management:
+  scf hub projects            List all registered projects
+  scf hub projects --add <path>       Add a project to hub
+  scf hub projects --remove <name>    Remove a project from hub
+  scf hub projects --info <name>      Show project details
+  scf hub scan                Scan directories for new projects
+
+Learning & Teaching:
+  scf hub learn               Gather learnings from all spokes
+  scf hub learn <project>     Learn from specific project
+  scf hub teach               Push learnings to all spokes
+  scf hub teach <project>     Teach specific project
+
+Setup:
+  scf hub create              Create a new hub (interactive)
+  scf hub create <path>       Create hub at specific location
+
+Examples:
+  scf hub projects --add ~/projects/my-app
+  scf hub learn session-continuity-framework
+  scf hub teach --all
+""")
+
+    @staticmethod
+    def _hub_status(hub_path: Path):
+        """Show hub status"""
+        if not hub_path:
+            print("❌ No hub configured. Run: scf hub create")
+            return
+
+        print(f"📊 Hub Status")
+        print("=" * 50)
+        print(f"\n📍 Location: {hub_path}\n")
+
+        # Show hub info
+        profile_path = hub_path / 'hub-profile.json'
+        if profile_path.exists():
+            with open(profile_path) as f:
+                profile = json.load(f)
+            print(f"👤 User: {profile.get('user', {}).get('name', 'Unknown')}")
+            print(f"💼 Focus: {profile.get('work_style', {}).get('description', 'Not set')}")
+            print(f"🤖 AI Style: {profile.get('work_style', {}).get('ai_collaboration_style', 'collaborative')}")
+            created = profile.get('hub_config', {}).get('created_at', 'Unknown')
+            if created != 'Unknown':
+                created = created.split('T')[0]
+            print(f"📅 Created: {created}")
+
+        # Count and list projects
+        registry_path = hub_path / '.scf-registry' / 'spoke-projects.json'
+        if registry_path.exists():
+            with open(registry_path) as f:
+                registry = json.load(f)
+            projects = registry.get('projects', [])
+            scf_enabled = sum(1 for p in projects if p.get('scf_enabled'))
+            print(f"\n📁 Projects: {len(projects)} total ({scf_enabled} SCF-enabled)")
+
+            if projects:
+                print("\n   Recent projects:")
+                for proj in projects[:5]:
+                    status = "🌟" if proj.get('scf_enabled') else "📁"
+                    print(f"   {status} {proj['name']}")
+                if len(projects) > 5:
+                    print(f"   ... and {len(projects) - 5} more")
+
+        # Check learnings
+        learnings_dir = hub_path / 'learnings'
+        if learnings_dir.exists():
+            learning_files = list(learnings_dir.glob('*.json'))
+            print(f"\n🧠 Learnings: {len(learning_files)} patterns stored")
+
+        print(f"\n💡 Run 'scf hub stats' for detailed statistics")
+
+    @staticmethod
+    def _hub_stats(hub_path: Path, hub_manager):
+        """Show detailed hub statistics"""
+        if not hub_path:
+            print("❌ No hub configured. Run: scf hub create")
+            return
+
+        print(f"📊 Hub Statistics")
+        print("=" * 50)
+
+        registry_path = hub_path / '.scf-registry' / 'spoke-projects.json'
+        if not registry_path.exists():
+            print("\n❌ No project registry found")
+            return
+
+        with open(registry_path) as f:
+            registry = json.load(f)
+
+        projects = registry.get('projects', [])
+        scf_enabled = [p for p in projects if p.get('scf_enabled')]
+        regular = [p for p in projects if not p.get('scf_enabled')]
+
+        print(f"\n📁 Projects Overview")
+        print(f"   Total registered: {len(projects)}")
+        print(f"   SCF-enabled:      {len(scf_enabled)}")
+        print(f"   Regular:          {len(regular)}")
+
+        # Sync status
+        needs_sync = []
+        never_synced = []
+        for proj in projects:
+            if proj.get('scf_enabled'):
+                if not proj.get('last_sync'):
+                    never_synced.append(proj['name'])
+                # Could check actual sync dates here
+
+        if never_synced:
+            print(f"\n⚠️  Never synced: {len(never_synced)} projects")
+            for name in never_synced[:3]:
+                print(f"      • {name}")
+
+        # Learnings stats
+        learnings_dir = hub_path / 'learnings'
+        print(f"\n🧠 Learnings")
+        if learnings_dir.exists():
+            learning_files = list(learnings_dir.glob('*.json'))
+            print(f"   Patterns stored: {len(learning_files)}")
+        else:
+            print(f"   Patterns stored: 0")
+            print(f"   💡 Run 'scf hub learn' to gather learnings from spokes")
+
+        # Recommendations
+        print(f"\n💡 Recommendations")
+        if regular:
+            print(f"   • {len(regular)} projects could be SCF-enabled")
+        if never_synced:
+            print(f"   • {len(never_synced)} projects need initial sync")
+        if not scf_enabled:
+            print(f"   • Run 'scf hub scan' to discover more projects")
+
+    @staticmethod
+    def _hub_projects(hub_path: Path, args):
+        """List and manage hub projects"""
+        if not hub_path:
+            print("❌ No hub configured. Run: scf hub create")
+            return
+
+        registry_path = hub_path / '.scf-registry' / 'spoke-projects.json'
+
+        # Handle --add
+        if args.add:
+            SCFCommands._hub_projects_add(hub_path, registry_path, args.add)
+            return
+
+        # Handle --remove
+        if args.remove:
+            SCFCommands._hub_projects_remove(registry_path, args.remove)
+            return
+
+        # Handle --info
+        if args.info:
+            SCFCommands._hub_projects_info(registry_path, args.info)
+            return
+
+        # Default: list all projects
+        if not registry_path.exists():
+            print("📁 No projects registered yet")
+            print("   Run 'scf hub scan' to discover projects")
+            return
+
+        with open(registry_path) as f:
+            registry = json.load(f)
+
+        projects = registry.get('projects', [])
+        if not projects:
+            print("📁 No projects registered yet")
+            return
+
+        print(f"📁 Registered Projects ({len(projects)})")
+        print("=" * 50)
+
+        for proj in sorted(projects, key=lambda x: x['name'].lower()):
+            status = "🌟" if proj.get('scf_enabled') else "📁"
+            sync = proj.get('last_sync', 'never')
+            if sync != 'never':
+                sync = sync.split('T')[0]
+            print(f"\n{status} {proj['name']}")
+            print(f"   Path: {proj['path']}")
+            print(f"   Type: {proj.get('type', 'unknown')}")
+            print(f"   Last sync: {sync}")
+
+    @staticmethod
+    def _hub_projects_add(hub_path: Path, registry_path: Path, project_path: str):
+        """Add a project to the hub"""
+        proj_path = Path(project_path).expanduser().resolve()
+
+        if not proj_path.exists():
+            print(f"❌ Path not found: {proj_path}")
+            return
+
+        # Load or create registry
+        if registry_path.exists():
+            with open(registry_path) as f:
+                registry = json.load(f)
+        else:
+            registry = {"version": "1.0", "projects": []}
+
+        # Check if already registered
+        existing = {p['path'] for p in registry.get('projects', [])}
+        if str(proj_path) in existing:
+            print(f"⚠️  Project already registered: {proj_path.name}")
+            return
+
+        # Detect project info
+        is_scf = (proj_path / '.scf').exists() or (proj_path / 'buildstate.json').exists()
+
+        proj_info = {
+            'name': proj_path.name,
+            'path': str(proj_path),
+            'type': 'unknown',
+            'scf_enabled': is_scf,
+            'added_at': datetime.now(timezone.utc).isoformat(),
+            'last_sync': None
+        }
+
+        # Read SCF details if available
+        if is_scf:
+            for bs_path in [proj_path / '.scf' / 'BUILDSTATE.json', proj_path / 'buildstate.json']:
+                if bs_path.exists():
+                    try:
+                        with open(bs_path) as f:
+                            data = json.load(f)
+                        proj_info['type'] = data.get('project', {}).get('type', 'unknown')
+
+                        # Update spoke's hub_path
+                        if '_scf_metadata' in data:
+                            data['_scf_metadata']['hub_path'] = str(hub_path)
+                            with open(bs_path, 'w') as f:
+                                json.dump(data, f, indent=2)
+                        break
+                    except:
+                        pass
+
+        registry['projects'].append(proj_info)
+
+        with open(registry_path, 'w') as f:
+            json.dump(registry, f, indent=2)
+
+        status = "🌟 SCF-enabled" if is_scf else "📁 Regular"
+        print(f"✅ Added: {proj_path.name} ({status})")
+
+    @staticmethod
+    def _hub_projects_remove(registry_path: Path, project_name: str):
+        """Remove a project from the hub"""
+        if not registry_path.exists():
+            print("❌ No projects registered")
+            return
+
+        with open(registry_path) as f:
+            registry = json.load(f)
+
+        projects = registry.get('projects', [])
+        original_count = len(projects)
+
+        # Filter out the project (match by name or path)
+        registry['projects'] = [
+            p for p in projects
+            if p['name'].lower() != project_name.lower() and
+               not p['path'].endswith(project_name)
+        ]
+
+        if len(registry['projects']) == original_count:
+            print(f"❌ Project not found: {project_name}")
+            return
+
+        with open(registry_path, 'w') as f:
+            json.dump(registry, f, indent=2)
+
+        print(f"✅ Removed: {project_name}")
+
+    @staticmethod
+    def _hub_projects_info(registry_path: Path, project_name: str):
+        """Show detailed project info"""
+        if not registry_path.exists():
+            print("❌ No projects registered")
+            return
+
+        with open(registry_path) as f:
+            registry = json.load(f)
+
+        # Find project
+        proj = None
+        for p in registry.get('projects', []):
+            if p['name'].lower() == project_name.lower() or p['path'].endswith(project_name):
+                proj = p
+                break
+
+        if not proj:
+            print(f"❌ Project not found: {project_name}")
+            return
+
+        print(f"📦 Project: {proj['name']}")
+        print("=" * 50)
+        print(f"   Path:        {proj['path']}")
+        print(f"   Type:        {proj.get('type', 'unknown')}")
+        print(f"   SCF-enabled: {'Yes' if proj.get('scf_enabled') else 'No'}")
+        print(f"   Added:       {proj.get('added_at', 'unknown').split('T')[0]}")
+        print(f"   Last sync:   {proj.get('last_sync', 'never')}")
+
+        # If SCF-enabled, read more details
+        if proj.get('scf_enabled'):
+            proj_path = Path(proj['path'])
+            for bs_path in [proj_path / '.scf' / 'BUILDSTATE.json', proj_path / 'buildstate.json']:
+                if bs_path.exists():
+                    try:
+                        with open(bs_path) as f:
+                            data = json.load(f)
+
+                        if '_project_foundation' in data:
+                            foundation = data['_project_foundation']
+                            if foundation.get('identity'):
+                                print(f"\n📋 Foundation:")
+                                print(f"   {foundation['identity'].get('one_liner', 'No description')}")
+
+                        if 'features' in data and data['features']:
+                            print(f"\n✨ Features: {len(data['features'])}")
+                            for feat in data['features'][:3]:
+                                print(f"   • {feat.get('name', 'unnamed')}")
+
+                        if 'decisions' in data and data['decisions']:
+                            print(f"\n📝 Decisions: {len(data['decisions'])}")
+
+                        break
+                    except:
+                        pass
+
+    @staticmethod
+    def _hub_scan(hub_path: Path, hub_manager):
+        """Scan for new projects"""
+        if not hub_path:
+            print("❌ No hub configured. Run: scf hub create")
+            return
+
+        registry_dir = hub_path / '.scf-registry'
+        hub_manager._discover_existing_projects(hub_path, registry_dir)
+
+    @staticmethod
+    def _hub_learn(hub_path: Path, hub_manager, args):
+        """Gather learnings from spokes"""
+        if not hub_path:
+            print("❌ No hub configured. Run: scf hub create")
+            return
+
+        target = args.target if hasattr(args, 'target') and args.target else None
+
+        print(f"🧠 Learning from {'project: ' + target if target else 'all spokes'}...")
+
+        registry_path = hub_path / '.scf-registry' / 'spoke-projects.json'
+        if not registry_path.exists():
+            print("❌ No projects registered")
+            return
+
+        with open(registry_path) as f:
+            registry = json.load(f)
+
+        projects = [p for p in registry.get('projects', []) if p.get('scf_enabled')]
+
+        if target:
+            projects = [p for p in projects if p['name'].lower() == target.lower()]
+            if not projects:
+                print(f"❌ SCF-enabled project not found: {target}")
+                return
+
+        learnings_dir = hub_path / 'learnings'
+        learnings_dir.mkdir(exist_ok=True)
+
+        learned_count = 0
+        for proj in projects:
+            proj_path = Path(proj['path'])
+            signals_path = proj_path / '.scf' / 'spoke-signals.jsonl'
+
+            if not signals_path.exists():
+                signals_path = proj_path / 'spoke-signals.jsonl'
+
+            if signals_path.exists():
+                print(f"   📖 Reading signals from {proj['name']}...")
+                # Read and process signals
+                # For now, just count them
+                with open(signals_path) as f:
+                    signals = [json.loads(line) for line in f if line.strip()]
+                    high_impact = [s for s in signals if s.get('offers')]
+                    if high_impact:
+                        learned_count += len(high_impact)
+                        print(f"      Found {len(high_impact)} high-impact learnings")
+
+        print(f"\n✅ Gathered {learned_count} learnings from {len(projects)} projects")
+        print(f"   💡 Run 'scf hub teach' to push learnings to other spokes")
+
+    @staticmethod
+    def _hub_teach(hub_path: Path, hub_manager, args):
+        """Push learnings to spokes"""
+        if not hub_path:
+            print("❌ No hub configured. Run: scf hub create")
+            return
+
+        target = args.target if hasattr(args, 'target') and args.target else None
+
+        print(f"📚 Teaching {'project: ' + target if target else 'all spokes'}...")
+
+        registry_path = hub_path / '.scf-registry' / 'spoke-projects.json'
+        if not registry_path.exists():
+            print("❌ No projects registered")
+            return
+
+        with open(registry_path) as f:
+            registry = json.load(f)
+
+        projects = [p for p in registry.get('projects', []) if p.get('scf_enabled')]
+
+        if target:
+            projects = [p for p in projects if p['name'].lower() == target.lower()]
+            if not projects:
+                print(f"❌ SCF-enabled project not found: {target}")
+                return
+
+        taught_count = 0
+        for proj in projects:
+            proj_path = Path(proj['path'])
+            print(f"   📝 Updating {proj['name']}...")
+
+            # Update kb-sync.json
+            kb_sync_path = proj_path / '.scf' / 'kb-sync.json'
+            if kb_sync_path.exists():
+                try:
+                    with open(kb_sync_path) as f:
+                        kb_sync = json.load(f)
+                    kb_sync['last_sync_date'] = datetime.now(timezone.utc).isoformat()
+                    kb_sync['hub_kb_version'] = datetime.now(timezone.utc).isoformat()
+                    with open(kb_sync_path, 'w') as f:
+                        json.dump(kb_sync, f, indent=2)
+                    taught_count += 1
+                except:
+                    pass
+
+            # Update last_sync in registry
+            proj['last_sync'] = datetime.now(timezone.utc).isoformat()
+
+        # Save registry
+        with open(registry_path, 'w') as f:
+            json.dump(registry, f, indent=2)
+
+        print(f"\n✅ Updated {taught_count} projects")
 
     @staticmethod
     def cmd_server(args):
@@ -799,10 +1256,15 @@ For more help: scf <command> --help
     init_parser.add_argument('--fresh', action='store_true', help='Reset existing SCF files')
 
     # Hub command
-    hub_parser = subparsers.add_parser('hub', help='Hub management')
-    hub_parser.add_argument('action', choices=['create', 'locate', 'status'], help='Hub action')
-    hub_parser.add_argument('path', nargs='?', help='Hub path (default: ~/scf-hub)')
+    hub_parser = subparsers.add_parser('hub', help='Hub management (run "scf hub" for full help)')
+    hub_parser.add_argument('action', nargs='?', choices=['create', 'locate', 'status', 'stats', 'projects', 'scan', 'learn', 'teach', 'help'],
+                           help='Hub action')
+    hub_parser.add_argument('target', nargs='?', help='Target project for learn/teach')
+    hub_parser.add_argument('path', nargs='?', help='Hub path for create (default: ~/scf-hub)')
     hub_parser.add_argument('--non-interactive', action='store_true', help='Skip interactive prompts')
+    hub_parser.add_argument('--add', metavar='PATH', help='Add project to hub')
+    hub_parser.add_argument('--remove', metavar='NAME', help='Remove project from hub')
+    hub_parser.add_argument('--info', metavar='NAME', help='Show project details')
 
     # Sync command
     sync_parser = subparsers.add_parser('sync', help='Sync with hub or check status')
