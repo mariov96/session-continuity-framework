@@ -3,11 +3,10 @@
     "version": "2.2.0",
     "structure_version": "v2",
     "description": "SCF Framework - Core code and spoke templates for AI context persistence",
-    "hub_reference": {
-      "note": "This project connects to a hub for cross-project learnings",
-      "hub_location": "~/scf-hub",
-      "github_repo": "mariov96/session-continuity-framework"
-    },
+    "framework_path": "~/projects/session-continuity-framework",
+    "hub_path": "~/scf-hub",
+    "_paths_note": "This IS the framework. hub_path points to the developer's personal hub.",
+    "github_repo": "mariov96/session-continuity-framework",
     "last_sync_date": "2025-12-22T00:00:00Z",
     "hub_kb_version": "2025-12-22T00:00:00Z",
     "spoke_kb_version": "2025-12-22T00:00:00Z"

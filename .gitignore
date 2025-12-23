@@ -235,6 +235,7 @@ buildstate.json.backup*
 spoke-signals.jsonl
 hub-ideas.json
 hub-profile.json
+!templates/hub/hub-profile.json
 registry-state.json
 
 # OS Files

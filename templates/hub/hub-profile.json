@@ -1,0 +1,59 @@
+{
+  "user": {
+    "name": null,
+    "email": null,
+    "github": {
+      "username": null,
+      "url": null,
+      "auth_method": "ssh",
+      "ssh_key_path": "~/.ssh/id_rsa"
+    }
+  },
+  "work_style": {
+    "description": null,
+    "typical_projects": [],
+    "preferred_ais": ["Claude", "GitHub Copilot"],
+    "coding_preferences": {
+      "languages": [],
+      "frameworks": [],
+      "patterns": [],
+      "avoid": []
+    }
+  },
+  "hub_config": {
+    "created_at": null,
+    "hub_path": null,
+    "framework_path": null,
+    "version": "v2.2",
+    "auto_teach_on_recon": false,
+    "signal_noise_threshold": 8,
+    "_note": "framework_path: Set during 'scf hub create' to point to session-continuity-framework location"
+  },
+  "learning_philosophy": {
+    "share_threshold": 8,
+    "description": "Only share high-impact learnings (impact >= 8) to keep signals valuable. Quality over quantity.",
+    "what_to_share": [
+      "Architectural breakthroughs",
+      "Patterns that saved significant time",
+      "Critical bugs avoided",
+      "Performance optimizations with measurable impact",
+      "Cross-project applicable solutions"
+    ],
+    "what_not_to_share": [
+      "Project-specific implementation details",
+      "Minor refactorings",
+      "Routine bug fixes",
+      "Personal preferences without impact justification"
+    ]
+  },
+  "spoke_contributions": {
+    "description": "Spokes can update this section to improve hub intelligence",
+    "suggested_patterns": [],
+    "workflow_improvements": [],
+    "tool_recommendations": []
+  },
+  "_instructions": {
+    "for_llms": "Read this file to understand the developer you're working with. Use these preferences when making suggestions. Don't override explicit project requirements, but default to these patterns.",
+    "updating": "This file is created during 'scf hub create'. Update manually or via spoke signals."
+  }
+}

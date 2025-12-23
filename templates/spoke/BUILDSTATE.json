@@ -3,10 +3,9 @@
     "version": "2.2.0",
     "structure_version": "v2",
     "description": "SCF-enabled project with context persistence",
-    "hub_reference": {
-      "note": "Update hub_location after running 'scf hub create'",
-      "hub_location": null
-    },
+    "framework_path": null,
+    "hub_path": null,
+    "_paths_note": "framework_path: where SCF scripts live. hub_path: where your learnings live. Set via 'scf init --guided'",
     "last_sync_date": null,
     "hub_kb_version": null,
     "spoke_kb_version": null
