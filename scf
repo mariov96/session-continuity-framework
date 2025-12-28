@@ -12,9 +12,10 @@ import sys
 import json
 import shutil
 import subprocess
+import hashlib
 from pathlib import Path
 from typing import Optional
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 # Import existing SCF modules
 try:
@@ -181,9 +182,21 @@ class SCFHubManager:
             print("   No valid paths to scan.")
             return
 
+        # Load registry to get known projects
+        registry_path = registry_dir / 'spoke-projects.json'
+        known_paths = set()
+        if registry_path.exists():
+            try:
+                registry = json.loads(registry_path.read_text())
+                known_paths = {p.get('path') for p in registry.get('projects', []) if p.get('path')}
+                if known_paths:
+                    print(f"   (Skipping {len(known_paths)} already registered projects)")
+            except:
+                pass
+
         # Scan for projects
         print(f"\n🔍 Scanning for projects...")
-        discovered = self._scan_for_projects(scan_paths)
+        discovered = self._scan_for_projects(scan_paths, known_paths)
 
         if not discovered:
             print("   No projects found.")
@@ -249,10 +262,16 @@ class SCFHubManager:
         else:
             print("\n   No projects selected for intake.")
 
-    def _scan_for_projects(self, scan_paths: list) -> list:
-        """Scan directories for projects (looks for git repos or common project markers)"""
+    def _scan_for_projects(self, scan_paths: list, known_paths: set = None) -> list:
+        """Scan directories for projects (looks for git repos or common project markers)
+
+        Args:
+            scan_paths: List of directories to scan
+            known_paths: Set of paths already in registry (will be skipped)
+        """
         discovered = []
         seen_paths = set()
+        known_paths = known_paths or set()
 
         for scan_path in scan_paths:
             # Look for immediate subdirectories that look like projects
@@ -263,6 +282,9 @@ class SCFHubManager:
                     if item.name.startswith('.'):
                         continue
                     if str(item.resolve()) in seen_paths:
+                        continue
+                    # Skip projects already in registry
+                    if str(item.resolve()) in known_paths:
                         continue
 
                     # Check if it's a project
@@ -600,6 +622,48 @@ class SCFHubMenu:
                 return json.load(f)
         return {}
 
+    def _get_signal_hash(self, signal: dict) -> str:
+        """Compute a unique hash for a signal based on its content."""
+        # Use timestamp + type + first offer description for uniqueness
+        parts = [
+            signal.get('timestamp', ''),
+            signal.get('type', ''),
+        ]
+        # Include offers content if present
+        for offer in signal.get('offers', []):
+            parts.append(offer.get('description', offer.get('pattern', '')))
+        content = '|'.join(str(p) for p in parts)
+        return hashlib.sha256(content.encode()).hexdigest()[:16]
+
+    def _load_learned_signals(self) -> dict:
+        """Load the registry of learned signals."""
+        learned_file = self.hub_path / '.scf-registry' / 'learned-signals.json'
+        if learned_file.exists():
+            try:
+                return json.loads(learned_file.read_text())
+            except:
+                pass
+        return {'version': '1.0', 'signals': {}}
+
+    def _save_learned_signals(self, data: dict):
+        """Save the learned signals registry."""
+        learned_file = self.hub_path / '.scf-registry' / 'learned-signals.json'
+        learned_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(learned_file, 'w') as f:
+            json.dump(data, f, indent=2)
+
+    def _get_hub_version(self) -> str:
+        """Get current hub version hash based on learnings content."""
+        learnings_dir = self.hub_path / 'learnings'
+        if not learnings_dir.exists():
+            return 'empty'
+        # Hash based on learning files and their modification times
+        parts = []
+        for f in sorted(learnings_dir.glob('*.json')):
+            parts.append(f"{f.name}:{f.stat().st_mtime}")
+        content = '|'.join(parts)
+        return hashlib.sha256(content.encode()).hexdigest()[:12]
+
     def run(self):
         """Main menu loop"""
         while True:
@@ -607,6 +671,113 @@ class SCFHubMenu:
             if action == 'q':
                 print("\n👋 Goodbye!\n")
                 break
+
+    def _get_recent_error_count(self) -> int:
+        """Count errors from the last 24 hours"""
+        error_log = self.hub_path / 'logs' / 'errors.jsonl'
+        if not error_log.exists():
+            return 0
+
+        count = 0
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+        try:
+            with open(error_log) as f:
+                for line in f:
+                    if line.strip():
+                        try:
+                            entry = json.loads(line)
+                            ts = datetime.fromisoformat(entry['timestamp'].replace('Z', '+00:00'))
+                            if ts > cutoff:
+                                count += len(entry.get('errors', []))
+                        except:
+                            pass
+        except:
+            pass
+        return count
+
+    def _generate_signal_opportunity_prompt(self, project_name: str, hub_learnings_info: dict) -> str:
+        """Generate a prompt encouraging spoke LLM to signal back learnings."""
+        now = datetime.now(timezone.utc).isoformat()
+
+        # Build list of what was just taught
+        taught_areas = []
+        if hub_learnings_info.get('ide'):
+            taught_areas.append(f"IDE configurations: {', '.join(hub_learnings_info['ide'][:5])}")
+        if hub_learnings_info.get('patterns'):
+            taught_areas.append(f"Language/workflow patterns: {', '.join(hub_learnings_info['patterns'][:5])}")
+        if hub_learnings_info.get('other'):
+            taught_areas.append(f"Project learnings: {len(hub_learnings_info['other'])} files")
+
+        taught_section = '\n'.join(f"- {area}" for area in taught_areas) if taught_areas else "- General hub knowledge"
+
+        return f'''# 🔄 Signal Opportunity Check
+> Last updated: {now}
+
+## What You Just Received From Hub
+
+This project was just synced with the SCF hub. New knowledge available:
+
+{taught_section}
+
+## 🎯 Your Turn: Look for Learnings to Signal Back!
+
+Now that you've received learnings from the ecosystem, take a moment to consider what **this project** might contribute back. The best learnings come from real work - things you've discovered, patterns you've established, or optimizations you've made.
+
+### Areas to Check (especially those similar to what you just learned)
+
+{'**IDE/Editor Configurations** (high value - you just received IDE configs!)' if hub_learnings_info.get('ide') else '**IDE/Editor Configurations**'}
+- [ ] `.vscode/settings.json` - Any project-specific settings worth sharing?
+- [ ] `.vscode/tasks.json` - Useful task configurations?
+- [ ] `.vscode/launch.json` - Debug configurations that work well?
+- [ ] Editor-specific files (`.editorconfig`, prettier configs, etc.)
+
+**Build & Development Patterns**
+- [ ] Build optimizations that improved performance
+- [ ] Development workflow shortcuts
+- [ ] Testing configurations that caught real bugs
+- [ ] CI/CD patterns that work well
+
+**Code Patterns & Decisions**
+- [ ] Architectural decisions with clear rationale
+- [ ] Error handling patterns that proved robust
+- [ ] Performance optimizations with measured impact
+- [ ] API design patterns worth replicating
+
+**Troubleshooting & Fixes**
+- [ ] Bug fixes with non-obvious root causes
+- [ ] Environment setup gotchas and solutions
+- [ ] Dependency conflicts and resolutions
+
+### Quality Filter (Signal if...)
+
+✅ **DO signal** if the learning:
+- Has clear rationale (not just "we did X")
+- Would benefit other projects in this ecosystem
+- Solves a real problem you encountered
+- Has measurable or observable impact
+- Is specific enough to be actionable
+
+❌ **DON'T signal** if it's:
+- Project-specific with no broader applicability
+- Common knowledge in the language/framework
+- Incomplete or experimental
+- Just boilerplate or scaffolding
+
+### How to Signal
+
+Add to `.scf/spoke-signals.jsonl`:
+
+```json
+{{"type": "pattern", "topic": "Your discovery", "impact": 8, "rationale": "Why this matters...", "context": "When to apply", "date": "{now[:10]}"}}
+```
+
+Impact scale: 1-10 (7+ = worth propagating to ecosystem)
+
+---
+
+💡 **Remember**: You don't need to find something every session. Quality over quantity!
+The best signals are things you'd want to tell yourself if you were starting a similar project.
+'''
 
     def main_menu(self) -> str:
         """Display main hub menu"""
@@ -618,11 +789,31 @@ class SCFHubMenu:
 
         user_name = profile.get('user', {}).get('name', 'Developer')
 
+        # Count learnings
+        learnings_dir = self.hub_path / 'learnings'
+        learning_count = len(list(learnings_dir.glob('*.json'))) if learnings_dir.exists() else 0
+
+        # Count recent errors (last 24h)
+        recent_errors = self._get_recent_error_count()
+
+        # Build dynamic header line with proper padding
+        info_line = f"👤 {user_name}  📁 {len(projects)} projects ({scf_count} SCF)"
+        # Box inner width is 62 chars (64 - 2 for borders)
+        padding = 62 - len(info_line) - 2  # -2 for leading spaces
+        header_content = f"  {info_line}{' ' * padding}"
+
+        # Error indicator line if recent errors
+        error_line = ""
+        if recent_errors > 0:
+            error_info = f"⚠️  {recent_errors} issue(s) detected - review with LLM for fixes"
+            error_padding = 62 - len(error_info) - 2
+            error_line = f"\n║  {error_info}{' ' * error_padding}║"
+
         print(f"""
 ╔══════════════════════════════════════════════════════════════╗
 ║                    📊 SCF Hub Manager                        ║
 ╠══════════════════════════════════════════════════════════════╣
-║  👤 {user_name:<20}  📁 {len(projects)} projects ({scf_count} SCF)       ║
+║{header_content}║{error_line}
 ╚══════════════════════════════════════════════════════════════╝
 
    1. 📁 Projects        - View and manage projects
@@ -630,12 +821,13 @@ class SCFHubMenu:
    3. 🔍 Scan            - Discover new projects
    4. 🧠 Learn           - Gather learnings from projects
    5. 📚 Teach           - Push learnings to projects
-   6. 📊 Statistics      - View detailed stats
-   7. ⚙️  Settings        - Hub configuration
+   6. 📖 Knowledge Base  - Browse learnings ({learning_count} files)
+   7. 📊 Statistics      - View detailed stats
+   8. ⚙️ Settings        - Hub configuration
 
    q. Quit
 """)
-        choice = self.get_choice(7, allow_back=False)
+        choice = self.get_choice(8, allow_back=False)
 
         if choice == '1':
             self.projects_menu()
@@ -648,8 +840,10 @@ class SCFHubMenu:
         elif choice == '5':
             self.teach_menu()
         elif choice == '6':
-            self.stats_menu()
+            self.knowledge_base_menu()
         elif choice == '7':
+            self.stats_menu()
+        elif choice == '8':
             self.settings_menu()
 
         return choice
@@ -676,9 +870,12 @@ class SCFHubMenu:
             if status_changed:
                 self.save_registry(registry)
 
+            title = f"📁 Projects ({len(projects)})"
+            title_padding = (62 - len(title)) // 2
+            title_line = f"{' ' * title_padding}{title}{' ' * (62 - title_padding - len(title))}"
             print(f"""
 ╔══════════════════════════════════════════════════════════════╗
-║                    📁 Projects ({len(projects)})                          ║
+║{title_line}║
 ╚══════════════════════════════════════════════════════════════╝
 """)
             if not projects:
@@ -771,9 +968,12 @@ class SCFHubMenu:
     def list_projects_verbose(self, projects: list):
         """Show detailed view of all projects"""
         self.clear_screen()
+        title = f"📋 Projects - Detailed View ({len(projects)})"
+        title_padding = (62 - len(title)) // 2
+        title_line = f"{' ' * title_padding}{title}{' ' * (62 - title_padding - len(title))}"
         print(f"""
 ╔══════════════════════════════════════════════════════════════╗
-║              📋 Projects - Detailed View ({len(projects)})                 ║
+║{title_line}║
 ╚══════════════════════════════════════════════════════════════╝
 """)
         # Summary stats
@@ -832,6 +1032,34 @@ class SCFHubMenu:
                 features.append("SCF")
             if features:
                 print(f"       Features: {', '.join(features)}")
+
+            # Git info
+            git = proj.get('git')
+            if git and git.get('has_repo'):
+                git_line = f"       Git: {git.get('branch', '?')}"
+                if git.get('commit_hash_short'):
+                    git_line += f" @ {git['commit_hash_short']}"
+                if git.get('has_remote'):
+                    if git.get('is_pushed'):
+                        git_line += " ✅ pushed"
+                    elif git.get('unpushed_count'):
+                        git_line += f" ⬆️ {git['unpushed_count']} unpushed"
+                    else:
+                        git_line += " ⬆️ unpushed"
+                else:
+                    git_line += " (no remote)"
+                if git.get('has_uncommitted'):
+                    git_line += " 📝 uncommitted"
+                print(git_line)
+
+                if git.get('remote_url'):
+                    # Clean up remote URL for display
+                    remote = git['remote_url']
+                    if remote.startswith('git@github.com:'):
+                        remote = remote.replace('git@github.com:', 'github.com/')
+                    if remote.endswith('.git'):
+                        remote = remote[:-4]
+                    print(f"       Repo: {remote}")
 
             # Description
             if proj.get('description'):
@@ -1209,22 +1437,34 @@ class SCFHubMenu:
                 except:
                     count = 0
                 print(f"   {i}. {p}  ({count} folders)")
-            print(f"\n   Or enter a custom path")
-            print(f"\n   c. Cancel\n")
+            print(f"\n   p. Enter a custom path")
+            print(f"   c. Cancel\n")
 
-            choice = input("   Selection: ").strip().lower()
+            choice = input("   Selection: ").strip()
 
-            if choice == 'c':
+            if choice.lower() == 'c':
                 return
+            elif choice.lower() == 'p':
+                # Prompt for custom path
+                path_input = input("\n   Enter path (or 'c' to cancel): ").strip()
+                if path_input.lower() == 'c':
+                    return
+                scan_path = Path(path_input.replace('\\', '/')).expanduser().resolve()
             elif choice.isdigit() and 1 <= int(choice) <= len(common_paths):
                 scan_path = common_paths[int(choice) - 1]
             else:
-                # Convert Windows backslashes to forward slashes
-                scan_path = Path(choice.replace('\\', '/')).expanduser().resolve()
+                # Check if user entered a path directly (starts with / or ~ or contains /)
+                if choice.startswith('/') or choice.startswith('~') or '/' in choice or '\\' in choice:
+                    scan_path = Path(choice.replace('\\', '/')).expanduser().resolve()
+                else:
+                    print(f"\n   ❌ Invalid selection - please enter 1-{len(common_paths)}, 'p' for path, or 'c' to cancel")
+                    self.wait_for_enter()
+                    return
         else:
             print("   Enter a directory to scan for projects.")
-            print("   Examples: ~/projects, ~/code, ~/work\n")
-            path_input = input("   Scan path (or 'c' to cancel): ").strip()
+            print("   Examples: ~/projects, ~/code, ~/work")
+            print("\n   c. Cancel\n")
+            path_input = input("   Scan path: ").strip()
 
             if path_input.lower() == 'c':
                 return
@@ -1265,9 +1505,12 @@ class SCFHubMenu:
 
         # Show found projects
         self.clear_screen()
+        title = f"📂 Found {len(new_projects)} Projects in {scan_path.name}/"
+        title_padding = (62 - len(title)) // 2
+        title_line = f"{' ' * title_padding}{title}{' ' * (62 - title_padding - len(title))}"
         print(f"""
 ╔══════════════════════════════════════════════════════════════╗
-║              📂 Found {len(new_projects)} Projects in {scan_path.name}/              ║
+║{title_line}║
 ╚══════════════════════════════════════════════════════════════╝
 """)
         for i, proj in enumerate(new_projects, 1):
@@ -1283,16 +1526,16 @@ class SCFHubMenu:
             if proj.get('description'):
                 print(f"       └─ {proj['description'][:50]}")
 
-        print(f"\n   Selection (1,3,5 or 1-{len(new_projects)}) [all]: ", end="")
-        choice = input().strip().lower()
-
-        if choice == 'c':
-            return
+        print(f"\n   Selection (1,3,5 or 1-{len(new_projects)} or 'a' for all) [all]")
+        print("   c. Cancel\n")
+        choice = input("   > ").strip().lower()
 
         # Parse selection (empty = all)
         indices = self._parse_selection(choice, len(new_projects))
+        if indices is None:  # Explicit cancel
+            return
         if not indices:
-            print("\n   ❌ No valid selection")
+            print("\n   ❌ No valid selection - please enter numbers from the list above")
             self.wait_for_enter()
             return
 
@@ -1417,6 +1660,283 @@ class SCFHubMenu:
 
         return sorted(discovered, key=lambda x: (not x['scf_enabled'], x['name'].lower()))
 
+    def _consolidate_scf_files(self, proj_path: Path) -> dict:
+        """Consolidate and normalize legacy SCF files to canonical locations.
+
+        Returns dict with consolidation results:
+        - migrated: list of files migrated
+        - merged: list of data merged
+        - cleaned: list of legacy files removed
+        - errors: list of any errors encountered
+        - corrupt_lines_cleaned: count of invalid JSON lines removed
+        """
+        result = {
+            'migrated': [],
+            'merged': [],
+            'cleaned': [],
+            'errors': [],
+            'corrupt_lines_cleaned': 0
+        }
+
+        scf_dir = proj_path / '.scf'
+        scf_dir.mkdir(exist_ok=True)
+
+        canonical_buildstate = scf_dir / 'BUILDSTATE.json'
+        canonical_signals = scf_dir / 'spoke-signals.jsonl'
+
+        # Define legacy locations to check
+        legacy_buildstates = [
+            proj_path / 'buildstate.json',
+            proj_path / 'BUILDSTATE.json',
+            scf_dir / 'buildstate.json',  # lowercase in .scf
+        ]
+
+        legacy_signals = [
+            proj_path / 'spoke-signals.jsonl',
+        ]
+
+        # ========== Consolidate BUILDSTATE ==========
+        merged_buildstate = None
+
+        # First, load canonical if it exists
+        if canonical_buildstate.exists():
+            try:
+                content = canonical_buildstate.read_text().strip()
+                if content:
+                    data = json.loads(content)
+                    if isinstance(data, dict):
+                        merged_buildstate = data
+                    else:
+                        result['errors'].append(f"Invalid canonical BUILDSTATE: expected dict, got {type(data).__name__}")
+            except Exception as e:
+                result['errors'].append(f"Error reading canonical BUILDSTATE: {e}")
+
+        # Check and merge legacy buildstates
+        for legacy_path in legacy_buildstates:
+            if legacy_path.exists() and legacy_path != canonical_buildstate:
+                try:
+                    content = legacy_path.read_text().strip()
+                    if not content:
+                        # Empty file - just remove it
+                        legacy_path.unlink()
+                        result['cleaned'].append(str(legacy_path.relative_to(proj_path)))
+                        continue
+
+                    legacy_data = json.loads(content)
+
+                    # Validate it's a dict, not a string or other type
+                    if not isinstance(legacy_data, dict):
+                        result['errors'].append(f"Invalid buildstate in {legacy_path.name}: expected dict, got {type(legacy_data).__name__}")
+                        continue
+
+                    if merged_buildstate is None:
+                        # First buildstate found - use as base
+                        merged_buildstate = legacy_data
+                        result['migrated'].append(str(legacy_path.relative_to(proj_path)))
+                    else:
+                        # Merge into existing
+                        merged_buildstate = self._merge_buildstate(merged_buildstate, legacy_data)
+                        result['merged'].append(str(legacy_path.relative_to(proj_path)))
+
+                    # Remove legacy file
+                    legacy_path.unlink()
+                    result['cleaned'].append(str(legacy_path.relative_to(proj_path)))
+
+                except json.JSONDecodeError as e:
+                    result['errors'].append(f"Invalid JSON in {legacy_path.name}: {e}")
+                except Exception as e:
+                    result['errors'].append(f"Error processing {legacy_path.name}: {e}")
+
+        # Write consolidated buildstate
+        if merged_buildstate is not None:
+            # Update metadata
+            if '_scf_metadata' not in merged_buildstate:
+                merged_buildstate['_scf_metadata'] = {}
+
+            merged_buildstate['_scf_metadata']['version'] = '2.2.0'
+            merged_buildstate['_scf_metadata']['structure_version'] = 'v2'
+            merged_buildstate['_scf_metadata']['last_consolidated'] = datetime.now(timezone.utc).isoformat()
+            merged_buildstate['_scf_metadata']['hub_path'] = str(self.hub_path)
+
+            try:
+                with open(canonical_buildstate, 'w') as f:
+                    json.dump(merged_buildstate, f, indent=2)
+            except Exception as e:
+                result['errors'].append(f"Error writing consolidated BUILDSTATE: {e}")
+
+        # ========== Consolidate spoke-signals.jsonl ==========
+        all_signals = []
+        canonical_corrupt_count = 0
+        canonical_had_corrupt = False
+
+        # Load canonical signals first
+        if canonical_signals.exists():
+            try:
+                with open(canonical_signals) as f:
+                    for line in f:
+                        line = line.strip()
+                        if line:
+                            try:
+                                all_signals.append(json.loads(line))
+                            except json.JSONDecodeError:
+                                canonical_corrupt_count += 1
+                                canonical_had_corrupt = True
+                if canonical_corrupt_count > 0:
+                    result['corrupt_lines_cleaned'] += canonical_corrupt_count
+            except Exception as e:
+                result['errors'].append(f"Error reading canonical signals: {e}")
+
+        # Check and merge legacy signals
+        legacy_had_signals = False
+        for legacy_path in legacy_signals:
+            if legacy_path.exists() and legacy_path != canonical_signals:
+                try:
+                    legacy_signals_data = []
+                    legacy_corrupt = 0
+                    with open(legacy_path) as f:
+                        for line in f:
+                            line = line.strip()
+                            if line:
+                                try:
+                                    legacy_signals_data.append(json.loads(line))
+                                except json.JSONDecodeError:
+                                    legacy_corrupt += 1
+
+                    if legacy_corrupt > 0:
+                        result['corrupt_lines_cleaned'] += legacy_corrupt
+
+                    if legacy_signals_data:
+                        # Merge signals (avoid duplicates by timestamp)
+                        existing_timestamps = {s.get('timestamp') for s in all_signals}
+                        new_signals = [s for s in legacy_signals_data
+                                      if s.get('timestamp') not in existing_timestamps]
+                        all_signals.extend(new_signals)
+                        legacy_had_signals = True
+
+                        if new_signals:
+                            result['merged'].append(f"{legacy_path.name} ({len(new_signals)} signals)")
+
+                    # Remove legacy file
+                    legacy_path.unlink()
+                    result['cleaned'].append(str(legacy_path.relative_to(proj_path)))
+
+                except Exception as e:
+                    result['errors'].append(f"Error processing {legacy_path.name}: {e}")
+
+        # Write consolidated signals if we have any AND (had corrupt lines to clean OR merged legacy files)
+        needs_rewrite = canonical_had_corrupt or legacy_had_signals
+        if all_signals and needs_rewrite:
+            try:
+                with open(canonical_signals, 'w') as f:
+                    for signal in all_signals:
+                        f.write(json.dumps(signal) + '\n')
+            except Exception as e:
+                result['errors'].append(f"Error writing consolidated signals: {e}")
+        elif canonical_had_corrupt and not all_signals:
+            # Had corrupt file with no valid signals - remove it
+            try:
+                canonical_signals.unlink()
+                result['cleaned'].append('spoke-signals.jsonl (all corrupt)')
+            except Exception as e:
+                result['errors'].append(f"Error removing corrupt signals file: {e}")
+
+        return result
+
+    def _merge_buildstate(self, base: dict, incoming: dict) -> dict:
+        """Merge two buildstate dicts, preferring newer/more complete data."""
+        merged = base.copy()
+
+        # Helper to normalize decisions (can be list or dict with impact levels)
+        def normalize_decisions(decisions):
+            if isinstance(decisions, list):
+                return [d for d in decisions if isinstance(d, dict)]
+            elif isinstance(decisions, dict):
+                # Format: {"high_impact": [...], "medium_impact": [...], ...}
+                all_decisions = []
+                for impact_level in ['high_impact', 'medium_impact', 'low_impact']:
+                    items = decisions.get(impact_level, [])
+                    if isinstance(items, list):
+                        all_decisions.extend([d for d in items if isinstance(d, dict)])
+                return all_decisions
+            return []
+
+        # Merge decisions (avoid duplicates by decision text or title)
+        base_decisions = normalize_decisions(merged.get('decisions', []))
+        incoming_decisions = normalize_decisions(incoming.get('decisions', []))
+
+        existing_decision_ids = set()
+        for d in base_decisions:
+            existing_decision_ids.add(d.get('decision', d.get('title', '')))
+
+        for decision in incoming_decisions:
+            decision_id = decision.get('decision', decision.get('title', ''))
+            if decision_id and decision_id not in existing_decision_ids:
+                base_decisions.append(decision)
+                existing_decision_ids.add(decision_id)
+        merged['decisions'] = base_decisions
+
+        # Merge features (avoid duplicates by name)
+        base_features = merged.get('features', [])
+        incoming_features = incoming.get('features', [])
+
+        # Ensure features are lists of dicts
+        if not isinstance(base_features, list):
+            base_features = []
+        if not isinstance(incoming_features, list):
+            incoming_features = []
+
+        existing_feature_names = {f.get('name', '') for f in base_features if isinstance(f, dict)}
+        for feature in incoming_features:
+            if isinstance(feature, dict) and feature.get('name', '') not in existing_feature_names:
+                base_features.append(feature)
+        merged['features'] = base_features
+
+        # Merge next_steps (avoid duplicates)
+        base_next = set(merged.get('next_steps', []))
+        incoming_next = set(incoming.get('next_steps', []))
+        merged['next_steps'] = list(base_next | incoming_next)
+
+        # Prefer newer metadata
+        if '_scf_metadata' in incoming:
+            if '_scf_metadata' not in merged:
+                merged['_scf_metadata'] = incoming['_scf_metadata']
+            else:
+                # Merge metadata, prefer incoming for most fields
+                for key in incoming['_scf_metadata']:
+                    if key not in merged['_scf_metadata']:
+                        merged['_scf_metadata'][key] = incoming['_scf_metadata'][key]
+
+        # Preserve project foundation if present in either
+        if '_project_foundation' in incoming and '_project_foundation' not in merged:
+            merged['_project_foundation'] = incoming['_project_foundation']
+
+        # Preserve project info
+        if 'project' in incoming and 'project' not in merged:
+            merged['project'] = incoming['project']
+
+        # Preserve stack info
+        if 'stack' in incoming and 'stack' not in merged:
+            merged['stack'] = incoming['stack']
+
+        return merged
+
+    def _log_errors(self, operation: str, errors: list):
+        """Log errors to hub's error log file"""
+        try:
+            log_dir = self.hub_path / 'logs'
+            log_dir.mkdir(exist_ok=True)
+            log_file = log_dir / 'errors.jsonl'
+
+            with open(log_file, 'a') as f:
+                entry = {
+                    'timestamp': datetime.now(timezone.utc).isoformat(),
+                    'operation': operation,
+                    'errors': errors
+                }
+                f.write(json.dumps(entry) + '\n')
+        except Exception:
+            pass  # Don't fail on logging failure
+
     def _format_size(self, size_bytes: int) -> str:
         """Format bytes to human readable string"""
         if size_bytes < 0:
@@ -1440,6 +1960,10 @@ class SCFHubMenu:
             default_all: If True, empty input returns all indices
         """
         selection = selection.strip().lower()
+
+        # Handle cancel
+        if selection in ('c', 'cancel'):
+            return None  # Explicit cancel signal
 
         # Handle empty input - default to all if enabled
         if not selection:
@@ -1472,9 +1996,94 @@ class SCFHubMenu:
 
         return sorted(indices)
 
+    def _display_projects_by_group(self, projects: list, registry: dict = None, show_numbers: bool = True) -> dict:
+        """Display projects organized by group. Returns map of number -> project.
+
+        Args:
+            projects: List of project dicts
+            registry: Optional registry containing group info
+            show_numbers: Whether to show numbered selections
+
+        Returns:
+            Dict mapping display number (1-indexed) to project dict
+        """
+        if registry is None:
+            registry = self.load_registry()
+
+        groups = registry.get('groups', {})
+        grouped = {}
+        ungrouped = []
+
+        for proj in projects:
+            grp = proj.get('group')
+            if grp:
+                if grp not in grouped:
+                    grouped[grp] = []
+                grouped[grp].append(proj)
+            else:
+                ungrouped.append(proj)
+
+        idx = 1
+        project_map = {}
+
+        # Display grouped projects first
+        for group_name in sorted(grouped.keys()):
+            group_info = groups.get(group_name, {})
+            desc = f" - {group_info.get('description', '')}" if group_info.get('description') else ""
+            print(f"   📂 {group_name}{desc}")
+
+            for proj in grouped[group_name]:
+                status = "🌟" if proj.get('scf_enabled') else "📁"
+                size_info = f" ({proj['file_count']} files)" if proj.get('file_count') else ""
+
+                # Git status indicator
+                git_indicator = ""
+                git = proj.get('git')
+                if git and git.get('has_repo'):
+                    if git.get('has_uncommitted'):
+                        git_indicator = " 📝"
+                    elif git.get('has_remote') and not git.get('is_pushed'):
+                        git_indicator = " ⬆️"
+
+                if show_numbers:
+                    print(f"   {idx:2}. {status} {proj['name']}{size_info}{git_indicator}")
+                else:
+                    print(f"       {status} {proj['name']}{size_info}{git_indicator}")
+                project_map[idx] = proj
+                idx += 1
+            print()  # Space between groups
+
+        # Display ungrouped projects
+        if ungrouped:
+            if grouped:
+                print(f"   📁 Ungrouped")
+            for proj in ungrouped:
+                status = "🌟" if proj.get('scf_enabled') else "📁"
+                size_info = f" ({proj['file_count']} files)" if proj.get('file_count') else ""
+
+                # Git status indicator
+                git_indicator = ""
+                git = proj.get('git')
+                if git and git.get('has_repo'):
+                    if git.get('has_uncommitted'):
+                        git_indicator = " 📝"
+                    elif git.get('has_remote') and not git.get('is_pushed'):
+                        git_indicator = " ⬆️"
+
+                if show_numbers:
+                    print(f"   {idx:2}. {status} {proj['name']}{size_info}{git_indicator}")
+                else:
+                    print(f"       {status} {proj['name']}{size_info}{git_indicator}")
+                project_map[idx] = proj
+                idx += 1
+
+        return project_map
+
     def remove_project(self, projects: list):
         """Remove a project interactively"""
         self.clear_screen()
+        registry = self.load_registry()
+
         print("""
 ╔══════════════════════════════════════════════════════════════╗
 ║                    🗑️  Delete Project                         ║
@@ -1482,10 +2091,8 @@ class SCFHubMenu:
 
    Select a project to remove from hub:
 """)
-        for i, proj in enumerate(projects, 1):
-            status = "🌟" if proj.get('scf_enabled') else "📁"
-            print(f"   {i:2}. {status} {proj['name']}")
-            print(f"       {proj['path']}")
+        # Display projects by group
+        project_map = self._display_projects_by_group(projects, registry)
 
         print("\n   c. Cancel\n")
         choice = input("   Selection: ").strip().lower()
@@ -1493,18 +2100,18 @@ class SCFHubMenu:
         if choice == 'c':
             return
 
-        if not choice.isdigit() or not (1 <= int(choice) <= len(projects)):
-            print("   ❌ Invalid selection")
+        if not choice.isdigit() or int(choice) not in project_map:
+            print("   ❌ Invalid selection - please enter a number from the list above")
             self.wait_for_enter()
             return
 
-        proj = projects[int(choice) - 1]
+        proj = project_map[int(choice)]
         print(f"\n   ⚠️  This removes '{proj['name']}' from hub tracking.")
         print(f"   (Project files on disk are NOT deleted)")
-        confirm = input(f"\n   Confirm delete? [y/N]: ").strip().lower()
+        print("\n   [y] Yes, remove  [n/Enter] Cancel")
+        confirm = input("\n   Confirm: ").strip().lower()
 
         if confirm == 'y':
-            registry = self.load_registry()
             registry['projects'] = [p for p in registry['projects'] if p['name'] != proj['name']]
             self.save_registry(registry)
             print(f"\n   ✅ Removed: {proj['name']}")
@@ -1516,6 +2123,8 @@ class SCFHubMenu:
     def rescan_projects(self, projects: list):
         """Rescan project(s) to rebuild their profiles"""
         self.clear_screen()
+        registry = self.load_registry()
+
         print("""
 ╔══════════════════════════════════════════════════════════════╗
 ║                    🔄 Rescan Projects                        ║
@@ -1523,24 +2132,27 @@ class SCFHubMenu:
 
    Select project(s) to rescan and rebuild profile:
 """)
-        for i, proj in enumerate(projects, 1):
-            status = "🌟" if proj.get('scf_enabled') else "📁"
-            print(f"   {i:2}. {status} {proj['name']}")
-            print(f"       {proj.get('path', 'unknown')}")
+        # Display projects by group
+        project_map = self._display_projects_by_group(projects, registry)
 
-        print(f"\n   Selection (1,3,5 or 1-{len(projects)}) [all]: ", end="")
-        choice = input().strip().lower()
-
-        if choice == 'c':
-            return
+        print(f"\n   Selection (1,3,5 or 1-{len(projects)} or 'a' for all) [all]")
+        print("   c. Cancel\n")
+        choice = input("   > ").strip().lower()
 
         indices = self._parse_selection(choice, len(projects))
+        if indices is None:  # Explicit cancel
+            return
         if not indices:
-            print("   ❌ No valid selection")
+            print("   ❌ No valid selection - please enter numbers from the list above")
             self.wait_for_enter()
             return
 
-        selected = [projects[i] for i in indices]
+        # Map indices to actual projects using project_map
+        selected = [project_map[i + 1] for i in indices if (i + 1) in project_map]
+        if not selected:
+            print("   ❌ No valid projects selected")
+            self.wait_for_enter()
+            return
         print(f"\n   🔄 Rescanning {len(selected)} project(s)...\n")
 
         registry = self.load_registry()
@@ -1613,6 +2225,80 @@ class SCFHubMenu:
         print(f"   ✅ Updated {updated_count} project profile(s)")
         self.wait_for_enter()
 
+    def _get_git_info(self, proj_path: Path) -> dict:
+        """Extract git repository information from a project"""
+        git_info = {
+            'has_repo': True,
+            'remote_url': None,
+            'branch': None,
+            'commit_hash': None,
+            'commit_hash_short': None,
+            'commit_date': None,
+            'commit_message': None,
+            'has_remote': False,
+            'is_pushed': None,  # None if no remote, True/False if has remote
+            'unpushed_count': 0,
+            'has_uncommitted': False
+        }
+
+        try:
+            # Get remote URL
+            result = subprocess.run(
+                ['git', 'remote', 'get-url', 'origin'],
+                cwd=proj_path, capture_output=True, text=True, timeout=5
+            )
+            if result.returncode == 0:
+                git_info['remote_url'] = result.stdout.strip()
+                git_info['has_remote'] = True
+
+            # Get current branch
+            result = subprocess.run(
+                ['git', 'branch', '--show-current'],
+                cwd=proj_path, capture_output=True, text=True, timeout=5
+            )
+            if result.returncode == 0:
+                git_info['branch'] = result.stdout.strip()
+
+            # Get latest commit info
+            result = subprocess.run(
+                ['git', 'log', '-1', '--format=%H|%h|%ci|%s'],
+                cwd=proj_path, capture_output=True, text=True, timeout=5
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                parts = result.stdout.strip().split('|', 3)
+                if len(parts) >= 4:
+                    git_info['commit_hash'] = parts[0]
+                    git_info['commit_hash_short'] = parts[1]
+                    git_info['commit_date'] = parts[2]
+                    git_info['commit_message'] = parts[3][:60]  # Truncate
+
+            # Check for uncommitted changes
+            result = subprocess.run(
+                ['git', 'status', '--porcelain'],
+                cwd=proj_path, capture_output=True, text=True, timeout=5
+            )
+            if result.returncode == 0:
+                git_info['has_uncommitted'] = len(result.stdout.strip()) > 0
+
+            # Check if pushed (only if has remote)
+            if git_info['has_remote'] and git_info['branch']:
+                result = subprocess.run(
+                    ['git', 'rev-list', '--count', f'origin/{git_info["branch"]}..HEAD'],
+                    cwd=proj_path, capture_output=True, text=True, timeout=5
+                )
+                if result.returncode == 0:
+                    unpushed = int(result.stdout.strip())
+                    git_info['unpushed_count'] = unpushed
+                    git_info['is_pushed'] = unpushed == 0
+                else:
+                    # Remote branch might not exist
+                    git_info['is_pushed'] = False
+
+        except Exception:
+            pass
+
+        return git_info
+
     def _build_project_profile(self, proj_path: Path) -> dict:
         """Build a comprehensive project profile by scanning the folder"""
         profile = {
@@ -1628,7 +2314,9 @@ class SCFHubMenu:
             'size_bytes': 0,
             'file_count': 0,
             'created_at': None,
-            'last_scanned': datetime.now(timezone.utc).isoformat()
+            'last_scanned': datetime.now(timezone.utc).isoformat(),
+            # Git tracking
+            'git': None  # Will be populated if git repo exists
         }
 
         # Get folder creation time (earliest file/folder mtime as proxy)
@@ -1639,6 +2327,9 @@ class SCFHubMenu:
                 profile['created_at'] = datetime.fromtimestamp(
                     git_dir.stat().st_mtime, tz=timezone.utc
                 ).isoformat()
+
+                # Extract git info
+                profile['git'] = self._get_git_info(proj_path)
             else:
                 profile['created_at'] = datetime.fromtimestamp(
                     proj_path.stat().st_ctime, tz=timezone.utc
@@ -1784,14 +2475,25 @@ class SCFHubMenu:
 
     def view_project_select(self, projects: list):
         """Select a project to view"""
+        # The project_map from projects_menu contains correct mapping
         print("\n   Enter project number to view (or 'c' to cancel): ", end="")
-        choice = input().strip()
+        choice = input().strip().lower()
 
-        if choice.lower() == 'c':
+        if choice == 'c':
             return
 
-        if choice.isdigit() and 1 <= int(choice) <= len(projects):
-            self.view_project(projects[int(choice) - 1])
+        if not choice.isdigit():
+            print("   ❌ Invalid selection - please enter a number")
+            self.wait_for_enter()
+            return
+
+        num = int(choice)
+        if num < 1 or num > len(projects):
+            print("   ❌ Invalid selection - number out of range")
+            self.wait_for_enter()
+            return
+
+        self.view_project(projects[num - 1])
 
     def view_project(self, proj: dict):
         """View detailed project info"""
@@ -1870,8 +2572,14 @@ class SCFHubMenu:
 
         if signals_path.exists():
             with open(signals_path) as f:
-                signals = [json.loads(line) for line in f if line.strip()]
-                high_impact = [s for s in signals if s.get('offers')]
+                signals = []
+                for line in f:
+                    if line.strip():
+                        try:
+                            signals.append(json.loads(line))
+                        except json.JSONDecodeError:
+                            pass  # Skip corrupt lines
+                high_impact = [s for s in signals if isinstance(s, dict) and s.get('offers')]
                 print(f"   Found {len(high_impact)} high-impact learnings")
         else:
             print("   No signals found in this project")
@@ -1927,7 +2635,7 @@ class SCFHubMenu:
         self.wait_for_enter()
 
     def learn_menu(self):
-        """Learn from all projects"""
+        """Learn from all projects - extract and persist high-impact learnings to hub"""
         self.clear_screen()
         print("""
 ╔══════════════════════════════════════════════════════════════╗
@@ -1944,25 +2652,337 @@ class SCFHubMenu:
 
         print(f"   Found {len(projects)} SCF-enabled projects\n")
 
-        learned_count = 0
+        # Load learned signals registry (tracks what we've already seen by hash)
+        learned_registry = self._load_learned_signals()
+        learned_hashes = learned_registry.get('signals', {})
+
+        # Ensure learnings directory exists
+        learnings_dir = self.hub_path / 'learnings'
+        learnings_dir.mkdir(exist_ok=True)
+
+        # Track results per project
+        learning_details = []
+        errors = []
+        total_corrupt_cleaned = 0
+
+        # Categorization counters
+        type_counts = {'decisions': 0, 'signals': 0, 'patterns': 0, 'ide_configs': 0}
+
         for proj in projects:
-            proj_path = Path(proj['path'])
-            signals_path = proj_path / '.scf' / 'spoke-signals.jsonl'
+            proj_path = Path(proj['path']).expanduser()
+            spoke_id = proj['name']
+            proj_slug = spoke_id.lower().replace(' ', '-').replace('_', '-')
 
-            if not signals_path.exists():
-                signals_path = proj_path / 'spoke-signals.jsonl'
+            proj_detail = {
+                'name': spoke_id,
+                'slug': proj_slug,
+                'new_learnings': [],
+                'known_count': 0,
+                'actions': [],
+                'contributed': False,
+                'potential_signals': []  # Decisions that could be signaled
+            }
 
-            if signals_path.exists():
-                print(f"   📖 Reading from {proj['name']}...")
-                with open(signals_path) as f:
-                    signals = [json.loads(line) for line in f if line.strip()]
-                    high_impact = [s for s in signals if s.get('offers')]
-                    if high_impact:
-                        learned_count += len(high_impact)
-                        print(f"      Found {len(high_impact)} learnings")
+            print(f"   📖 Reading from {spoke_id}...", end=" ")
 
-        print(f"\n   ✅ Gathered {learned_count} total learnings")
+            if not proj_path.exists():
+                print("❌ Path not found")
+                proj_detail['actions'].append('path not found')
+                learning_details.append(proj_detail)
+                continue
+
+            try:
+                # First, consolidate any legacy/corrupt SCF files
+                consolidation = self._consolidate_scf_files(proj_path)
+                if consolidation['errors']:
+                    errors.extend([f"{spoke_id}: {e}" for e in consolidation['errors']])
+                if consolidation['corrupt_lines_cleaned'] > 0:
+                    total_corrupt_cleaned += consolidation['corrupt_lines_cleaned']
+
+                # Load existing hub learnings for this project
+                hub_learning_path = learnings_dir / f"{proj_slug}.json"
+                existing_learnings = {'project': spoke_id, 'learnings': [], 'last_updated': None}
+                if hub_learning_path.exists():
+                    try:
+                        data = json.loads(hub_learning_path.read_text())
+                        # Handle both old format (list) and new format (dict)
+                        if isinstance(data, list):
+                            existing_learnings = {'project': spoke_id, 'learnings': data, 'last_updated': None}
+                        elif isinstance(data, dict):
+                            existing_learnings = data
+                            if 'learnings' not in existing_learnings:
+                                existing_learnings['learnings'] = []
+                    except:
+                        pass
+
+                existing_hashes = {self._get_learning_hash(l) for l in existing_learnings.get('learnings', []) if isinstance(l, dict)}
+                spoke_learned_hashes = learned_hashes.get(spoke_id, {})
+
+                # ========== Read signals ==========
+                signals_path = proj_path / '.scf' / 'spoke-signals.jsonl'
+                if not signals_path.exists():
+                    signals_path = proj_path / 'spoke-signals.jsonl'
+
+                if signals_path.exists():
+                    with open(signals_path) as f:
+                        for line_num, line in enumerate(f, 1):
+                            line = line.strip()
+                            if not line:
+                                continue
+                            try:
+                                signal = json.loads(line)
+                                if not isinstance(signal, dict):
+                                    continue
+
+                                for offer in signal.get('offers', []):
+                                    if not isinstance(offer, dict):
+                                        continue
+                                    impact = offer.get('impact', 0)
+                                    if impact < 8:
+                                        continue
+
+                                    # Build learning entry
+                                    learning = {
+                                        'type': offer.get('type', 'signal'),
+                                        'topic': offer.get('topic', offer.get('description', 'Unknown')),
+                                        'impact': impact,
+                                        'context': offer.get('context', ''),
+                                        'source': 'spoke-signals.jsonl',
+                                        'timestamp': signal.get('timestamp', datetime.now(timezone.utc).isoformat()),
+                                        'by': signal.get('by', 'unknown')
+                                    }
+
+                                    learning_hash = self._get_learning_hash(learning)
+
+                                    if learning_hash in existing_hashes or learning_hash in spoke_learned_hashes:
+                                        proj_detail['known_count'] += 1
+                                    else:
+                                        proj_detail['new_learnings'].append(learning)
+                                        existing_hashes.add(learning_hash)
+                                        # Track by type
+                                        ltype = learning['type'].lower()
+                                        if 'ide' in ltype or 'config' in ltype:
+                                            type_counts['ide_configs'] += 1
+                                        elif 'pattern' in ltype:
+                                            type_counts['patterns'] += 1
+                                        else:
+                                            type_counts['signals'] += 1
+
+                            except json.JSONDecodeError as e:
+                                errors.append(f"{spoke_id}/spoke-signals.jsonl line {line_num}: {e}")
+
+                # ========== Read BUILDSTATE decisions ==========
+                buildstate_data = None
+                for bs_name in ['BUILDSTATE.json', 'buildstate.json']:
+                    for bs_path in [proj_path / '.scf' / bs_name, proj_path / bs_name]:
+                        if bs_path.exists():
+                            try:
+                                content = bs_path.read_text().strip()
+                                if content:
+                                    data = json.loads(content)
+                                    if isinstance(data, dict):
+                                        buildstate_data = data
+                                        break
+                            except json.JSONDecodeError as e:
+                                errors.append(f"{spoke_id}/{bs_name}: {e}")
+                    if buildstate_data:
+                        break
+
+                if buildstate_data:
+                    decisions = buildstate_data.get('decisions', [])
+                    # Handle both list and dict formats
+                    if isinstance(decisions, dict):
+                        all_decisions = []
+                        for level in ['high_impact', 'medium_impact', 'low_impact']:
+                            all_decisions.extend(decisions.get(level, []))
+                        decisions = all_decisions
+
+                    for decision in decisions:
+                        if not isinstance(decision, dict):
+                            continue
+                        impact = decision.get('impact', 0)
+
+                        # Track potential signals (impact 7+) for suggestions
+                        if 7 <= impact < 8:
+                            proj_detail['potential_signals'].append({
+                                'topic': decision.get('decision', decision.get('title', 'Unknown')),
+                                'impact': impact
+                            })
+
+                        if impact < 8:
+                            continue
+
+                        learning = {
+                            'type': 'decision',
+                            'topic': decision.get('decision', decision.get('title', 'Unknown')),
+                            'impact': impact,
+                            'rationale': decision.get('rationale', ''),
+                            'context': decision.get('context', ''),
+                            'source': 'BUILDSTATE.json',
+                            'date': decision.get('date', datetime.now().date().isoformat()),
+                            'by': decision.get('by', 'unknown')
+                        }
+
+                        learning_hash = self._get_learning_hash(learning)
+
+                        if learning_hash in existing_hashes or learning_hash in spoke_learned_hashes:
+                            proj_detail['known_count'] += 1
+                        else:
+                            proj_detail['new_learnings'].append(learning)
+                            existing_hashes.add(learning_hash)
+                            type_counts['decisions'] += 1
+
+                # ========== Persist new learnings to hub ==========
+                if proj_detail['new_learnings']:
+                    # Add new learnings to existing
+                    existing_learnings['learnings'].extend(proj_detail['new_learnings'])
+                    existing_learnings['last_updated'] = datetime.now(timezone.utc).isoformat()
+                    existing_learnings['project'] = spoke_id
+
+                    # Write to hub
+                    with open(hub_learning_path, 'w') as f:
+                        json.dump(existing_learnings, f, indent=2)
+
+                    # Mark as learned in registry
+                    if spoke_id not in learned_hashes:
+                        learned_hashes[spoke_id] = {}
+                    for learning in proj_detail['new_learnings']:
+                        lhash = self._get_learning_hash(learning)
+                        learned_hashes[spoke_id][lhash] = datetime.now(timezone.utc).isoformat()
+
+                    proj_detail['contributed'] = True
+                    proj_detail['actions'].append(f"persisted {len(proj_detail['new_learnings'])} to hub")
+
+                # Build status message
+                new_count = len(proj_detail['new_learnings'])
+                known_count = proj_detail['known_count']
+
+                if new_count > 0:
+                    print(f"✅ {new_count} new" + (f", {known_count} known" if known_count else ""))
+                elif known_count > 0:
+                    print(f"ℹ️ {known_count} already learned")
+                    proj_detail['actions'].append('already learned')
+                elif proj_detail['potential_signals']:
+                    print(f"💡 {len(proj_detail['potential_signals'])} potential (impact 7)")
+                    proj_detail['actions'].append('has potential signals')
+                else:
+                    print("ℹ️ No high-impact items")
+                    proj_detail['actions'].append('no high-impact')
+
+                learning_details.append(proj_detail)
+
+            except Exception as e:
+                print(f"❌ Error")
+                errors.append(f"{spoke_id}: {type(e).__name__}: {e}")
+                proj_detail['actions'].append('error')
+                learning_details.append(proj_detail)
+
+        # Save learned signals registry
+        new_total = sum(len(d['new_learnings']) for d in learning_details)
+        if new_total > 0:
+            learned_registry['signals'] = learned_hashes
+            learned_registry['last_updated'] = datetime.now(timezone.utc).isoformat()
+            self._save_learned_signals(learned_registry)
+
+        # ═══════════════════════════════════════════════════════
+        # DETAILED SUMMARY
+        # ═══════════════════════════════════════════════════════
+        print(f"\n   ═══════════════════════════════════════════════════")
+        print(f"   📊 LEARNING SUMMARY")
+        print(f"   ═══════════════════════════════════════════════════")
+
+        # Per-project breakdown
+        print(f"\n   By Project: (🟢 new learnings | 🟡 already known | 💡 potential | ⚪ none)")
+        contributors = 0
+        consumers = 0
+        dormant = 0
+
+        for detail in learning_details:
+            new_count = len(detail['new_learnings'])
+            known_count = detail['known_count']
+
+            if new_count > 0:
+                icon = '🟢'
+                contributors += 1
+                actions = f"persisted {new_count}"
+                if known_count:
+                    actions += f", {known_count} known"
+            elif known_count > 0:
+                icon = '🟡'
+                consumers += 1
+                actions = f"{known_count} already learned"
+            elif detail['potential_signals']:
+                icon = '💡'
+                dormant += 1
+                actions = f"{len(detail['potential_signals'])} potential signals"
+            else:
+                icon = '⚪'
+                dormant += 1
+                actions = 'no high-impact items'
+
+            print(f"      {icon} {detail['name']}: {actions}")
+
+        # Overall stats
+        known_total = sum(d['known_count'] for d in learning_details)
+        print(f"\n   Overall: {new_total} new, {known_total} already known")
+
+        # Learnings by type
+        if any(type_counts.values()):
+            print(f"\n   By Type:")
+            if type_counts['decisions']:
+                print(f"      🏗️  Decisions: {type_counts['decisions']}")
+            if type_counts['signals']:
+                print(f"      📡 Signals: {type_counts['signals']}")
+            if type_counts['patterns']:
+                print(f"      📐 Patterns: {type_counts['patterns']}")
+            if type_counts['ide_configs']:
+                print(f"      🔧 IDE Configs: {type_counts['ide_configs']}")
+
+        # Contribution health
+        print(f"\n   Ecosystem Health:")
+        print(f"      📤 Contributors: {contributors} (actively sharing)")
+        print(f"      📥 Consumers: {consumers} (have learnings, nothing new)")
+        print(f"      💤 Dormant: {dormant} (no high-impact items)")
+
+        # Suggestions for potential signals
+        potential_projects = [d for d in learning_details if d['potential_signals']]
+        if potential_projects:
+            print(f"\n   💡 Potential Signals (impact 7, consider raising to 8):")
+            for detail in potential_projects[:3]:
+                signals_preview = ', '.join(s['topic'][:30] for s in detail['potential_signals'][:2])
+                more = f" +{len(detail['potential_signals'])-2}" if len(detail['potential_signals']) > 2 else ""
+                print(f"      • {detail['name']}: {signals_preview}{more}")
+
+        # Corruption cleanup
+        if total_corrupt_cleaned:
+            print(f"\n   🧹 Cleaned {total_corrupt_cleaned} corrupt line(s)")
+
+        # Errors
+        if errors:
+            print(f"\n   ⚠️ {len(errors)} error(s) encountered:")
+            for err in errors[:5]:
+                print(f"      • {err[:70]}{'...' if len(err) > 70 else ''}")
+            if len(errors) > 5:
+                print(f"      ... and {len(errors) - 5} more")
+            self._log_errors('learn_menu', errors)
+
+        # Final message
+        if new_total > 0:
+            print(f"\n   ─────────────────────────────────────────────────────")
+            print(f"   ✅ {new_total} learning(s) persisted to hub!")
+            print(f"      Run 'Teach' to share with other projects.")
+
         self.wait_for_enter()
+
+    def _get_learning_hash(self, learning: dict) -> str:
+        """Compute a unique hash for a learning based on its content."""
+        parts = [
+            learning.get('type', ''),
+            learning.get('topic', ''),
+            str(learning.get('impact', 0)),
+        ]
+        content = '|'.join(str(p) for p in parts)
+        return hashlib.sha256(content.encode()).hexdigest()[:16]
 
     def teach_menu(self):
         """Teach projects - push hub learnings to spokes safely"""
@@ -2036,17 +3056,60 @@ class SCFHubMenu:
 
             project_info.append(info)
 
-        # Display what we found
+        # Display what we found - organized by group
         print("   Found existing SCF data:\n")
-        for i, info in enumerate(project_info, 1):
+
+        # Build info map for group display
+        info_map = {info['proj']['name']: info for info in project_info}
+
+        # Organize by groups
+        groups = registry.get('groups', {})
+        grouped = {}
+        ungrouped = []
+
+        for info in project_info:
             proj = info['proj']
-            files_count = len(info['existing_files'])
-            print(f"   {i}. {proj['name']}")
-            if files_count:
-                print(f"      📂 {files_count} SCF files found")
-                print(f"      📊 {info['decisions_count']} decisions, {info['signals_count']} signals")
+            grp = proj.get('group')
+            if grp:
+                if grp not in grouped:
+                    grouped[grp] = []
+                grouped[grp].append(info)
             else:
-                print(f"      📭 No existing SCF files")
+                ungrouped.append(info)
+
+        idx = 1
+        info_index_map = {}  # Map display number to info
+
+        for group_name in sorted(grouped.keys()):
+            group_desc = groups.get(group_name, {}).get('description', '')
+            desc_str = f" - {group_desc}" if group_desc else ""
+            print(f"   📂 {group_name}{desc_str}")
+
+            for info in grouped[group_name]:
+                proj = info['proj']
+                files_count = len(info['existing_files'])
+                print(f"   {idx:2}. {proj['name']}")
+                if files_count:
+                    print(f"       📂 {files_count} SCF files, {info['decisions_count']} decisions, {info['signals_count']} signals")
+                else:
+                    print(f"       📭 No existing SCF files")
+                info_index_map[idx] = info
+                idx += 1
+            print()
+
+        if ungrouped:
+            if grouped:
+                print(f"   📁 Ungrouped")
+            for info in ungrouped:
+                proj = info['proj']
+                files_count = len(info['existing_files'])
+                print(f"   {idx:2}. {proj['name']}")
+                if files_count:
+                    print(f"       📂 {files_count} SCF files, {info['decisions_count']} decisions, {info['signals_count']} signals")
+                else:
+                    print(f"       📭 No existing SCF files")
+                info_index_map[idx] = info
+                idx += 1
 
         # Hub learnings summary
         learnings_dir = self.hub_path / 'learnings'
@@ -2061,48 +3124,130 @@ class SCFHubMenu:
    • Does NOT overwrite buildstate files
    • Merges learnings, never deletes
 """)
-        print(f"\n   Selection (1,3,5 or 1-{len(projects)}) [all]: ", end="")
-        selection = input().strip().lower()
-
-        if selection in ('b', 'c'):
-            return
+        print(f"   Selection (1,3,5 or 1-{len(projects)} or 'a' for all) [all]")
+        print("   c. Cancel\n")
+        selection = input("   > ").strip().lower()
 
         indices = self._parse_selection(selection, len(projects))
+        if indices is None:  # Explicit cancel
+            return
         if not indices:
-            print("   ❌ No valid selection")
+            print("   ❌ No valid selection - please enter numbers from the list above")
             self.wait_for_enter()
             return
 
-        selected_info = [project_info[i] for i in indices]
+        selected_info = [info_index_map[i + 1] for i in indices if (i + 1) in info_index_map]
+        if not selected_info:
+            print("   ❌ No valid projects selected")
+            self.wait_for_enter()
+            return
 
         print(f"\n   Teaching {len(selected_info)} project(s)...\n")
 
+        # Gather hub learnings info for detailed feedback
+        learnings_dir = self.hub_path / 'learnings'
+        hub_learnings_info = {'total': 0, 'ide': [], 'patterns': [], 'other': []}
+        if learnings_dir.exists():
+            for lf in learnings_dir.rglob('*.json'):
+                hub_learnings_info['total'] += 1
+                rel_path = lf.relative_to(learnings_dir)
+                if str(rel_path).startswith('ide/'):
+                    hub_learnings_info['ide'].append(lf.stem)
+                elif str(rel_path).startswith('languages/') or str(rel_path).startswith('workflows/'):
+                    hub_learnings_info['patterns'].append(lf.stem)
+                else:
+                    hub_learnings_info['other'].append(lf.stem)
+
         taught_count = 0
+        consolidated_count = 0
+        total_corrupt_cleaned = 0
+        total_files_migrated = 0
+        total_files_merged = 0
+        total_files_cleaned = 0
+        all_errors = []
+        teaching_details = []  # Collect detailed info for summary
+
         for info in selected_info:
             proj = info['proj']
             proj_path = info['path']
+            proj_details = {'name': proj['name'], 'actions': [], 'impact': 'minimal'}
 
             if not proj_path.exists():
-                print(f"   • {proj['name']}... ❌ Path not found")
+                print(f"   ┌─ {proj['name']}")
+                print(f"   │  ❌ Path not found")
+                print(f"   └──────────────────────────────────")
                 continue
 
-            print(f"   • {proj['name']}...", end=" ")
+            print(f"   ┌─ {proj['name']}")
 
             try:
                 scf_dir = proj_path / '.scf'
+                created_scf_dir = not scf_dir.exists()
                 scf_dir.mkdir(exist_ok=True)
+                if created_scf_dir:
+                    print(f"   │  📁 Created .scf/ directory")
+                    proj_details['actions'].append('created .scf/')
+
+                # First, consolidate any legacy SCF files
+                consolidation = self._consolidate_scf_files(proj_path)
+                if consolidation['errors']:
+                    all_errors.extend([f"{proj['name']}: {e}" for e in consolidation['errors']])
+
+                # Report migrations (files moved from root to .scf/)
+                if consolidation['migrated']:
+                    total_files_migrated += len(consolidation['migrated'])
+                    for f in consolidation['migrated']:
+                        print(f"   │  📦 Migrated: {f} → .scf/")
+                    proj_details['actions'].append(f"migrated {len(consolidation['migrated'])} file(s)")
+                    proj_details['impact'] = 'moderate'
+
+                # Report merges (data combined from multiple sources)
+                if consolidation['merged']:
+                    total_files_merged += len(consolidation['merged'])
+                    for f in consolidation['merged']:
+                        print(f"   │  🔀 Merged data from: {f}")
+                    proj_details['actions'].append(f"merged {len(consolidation['merged'])} source(s)")
+                    proj_details['impact'] = 'moderate'
+
+                # Report cleanups (legacy files removed)
+                if consolidation['cleaned']:
+                    total_files_cleaned += len(consolidation['cleaned'])
+                    cleaned_names = [f.split('/')[-1] for f in consolidation['cleaned']]
+                    print(f"   │  🧹 Cleaned legacy: {', '.join(set(cleaned_names))}")
+                    proj_details['actions'].append(f"cleaned {len(consolidation['cleaned'])} legacy file(s)")
+
+                # Report corrupt lines cleaned
+                if consolidation['corrupt_lines_cleaned'] > 0:
+                    total_corrupt_cleaned += consolidation['corrupt_lines_cleaned']
+                    print(f"   │  🔧 Fixed {consolidation['corrupt_lines_cleaned']} corrupt signal line(s)")
+                    proj_details['actions'].append(f"fixed {consolidation['corrupt_lines_cleaned']} corrupt lines")
 
                 # Update or create kb-sync.json (merge, don't overwrite)
                 kb_sync_path = scf_dir / 'kb-sync.json'
                 kb_sync = {}
-                if kb_sync_path.exists():
+                kb_sync_existed = kb_sync_path.exists()
+                if kb_sync_existed:
                     try:
                         kb_sync = json.loads(kb_sync_path.read_text())
                     except:
                         pass
 
+                # Get current hub version
+                hub_version = self._get_hub_version()
+
+                # Check if already up to date
+                current_version = kb_sync.get('hub_version')
+                if current_version == hub_version:
+                    if not consolidation['migrated'] and not consolidation['merged'] and not consolidation['cleaned']:
+                        print(f"   │  ℹ️  Already up to date with hub")
+                        print(f"   └──────────────────────────────────")
+                        proj_details['actions'].append('already current')
+                        teaching_details.append(proj_details)
+                        continue
+
                 kb_sync['last_sync_date'] = datetime.now(timezone.utc).isoformat()
                 kb_sync['hub_kb_version'] = datetime.now(timezone.utc).isoformat()
+                kb_sync['hub_version'] = hub_version  # Track version hash
                 kb_sync['hub_path'] = str(self.hub_path)
                 kb_sync['framework_path'] = str(self.framework_path)
 
@@ -2113,18 +3258,126 @@ class SCFHubMenu:
                 proj['last_sync'] = datetime.now(timezone.utc).isoformat()
                 taught_count += 1
 
-                if info['existing_files']:
-                    print(f"✅ Synced (preserved {len(info['existing_files'])} files)")
+                # Report what learnings are now available
+                if hub_learnings_info['total'] > 0:
+                    learning_summary = []
+                    if hub_learnings_info['ide']:
+                        learning_summary.append(f"{len(hub_learnings_info['ide'])} IDE configs")
+                    if hub_learnings_info['patterns']:
+                        learning_summary.append(f"{len(hub_learnings_info['patterns'])} patterns")
+                    if hub_learnings_info['other']:
+                        learning_summary.append(f"{len(hub_learnings_info['other'])} project learnings")
+                    print(f"   │  📚 Hub knowledge: {', '.join(learning_summary)}")
+                    proj_details['actions'].append(f"linked to {hub_learnings_info['total']} learnings")
+                    proj_details['impact'] = 'significant'
+
+                if not kb_sync_existed:
+                    print(f"   │  🔗 Created kb-sync.json (first sync!)")
+                    proj_details['actions'].append('first sync')
+                    proj_details['impact'] = 'significant'
                 else:
-                    print("✅ Synced")
+                    print(f"   │  ✅ Updated kb-sync.json")
+                    proj_details['actions'].append('synced')
+
+                # Write signal opportunity prompt for spoke LLM
+                signal_opp_path = scf_dir / 'SIGNAL_OPPORTUNITY.md'
+                signal_content = self._generate_signal_opportunity_prompt(
+                    proj['name'],
+                    hub_learnings_info
+                )
+                signal_opp_path.write_text(signal_content)
+                print(f"   │  📝 Updated signal opportunity prompt")
+                proj_details['actions'].append('signal prompt updated')
+
+                # Assess overall impact
+                if consolidation['migrated'] or not kb_sync_existed:
+                    proj_details['impact'] = 'significant'
+                elif consolidation['merged'] or consolidation['cleaned']:
+                    proj_details['impact'] = 'moderate'
+
+                print(f"   └──────────────────────────────────")
+                consolidated_count += 1 if (consolidation['migrated'] or consolidation['merged']) else 0
+                teaching_details.append(proj_details)
 
             except Exception as e:
-                print(f"❌ {e}")
+                print(f"   │  ❌ Error: {e}")
+                print(f"   └──────────────────────────────────")
+                all_errors.append(f"{proj['name']}: {e}")
+                proj_details['actions'].append(f'error: {e}')
+                teaching_details.append(proj_details)
 
         self.save_registry(registry)
-        print(f"\n   ═══════════════════════════════════════")
-        print(f"   ✅ Taught {taught_count} project(s)")
-        print(f"   ℹ️  No existing SCF data was modified or deleted")
+
+        # ═══════════════════════════════════════════════════════
+        # DETAILED SUMMARY
+        # ═══════════════════════════════════════════════════════
+        print(f"\n   ═══════════════════════════════════════════════════")
+        print(f"   📊 TEACHING SUMMARY")
+        print(f"   ═══════════════════════════════════════════════════")
+
+        # Per-project breakdown
+        print(f"\n   By Project: (🟢 significant | 🟡 moderate | ⚪ minimal/current)")
+        for detail in teaching_details:
+            impact_icon = {'significant': '🟢', 'moderate': '🟡', 'minimal': '⚪'}.get(detail['impact'], '⚪')
+            actions_str = ', '.join(detail['actions']) if detail['actions'] else 'no changes'
+            print(f"      {impact_icon} {detail['name']}: {actions_str}")
+
+        # Impact breakdown
+        significant = sum(1 for d in teaching_details if d['impact'] == 'significant')
+        moderate = sum(1 for d in teaching_details if d['impact'] == 'moderate')
+        minimal = sum(1 for d in teaching_details if d['impact'] == 'minimal')
+
+        print(f"\n   Overall: {taught_count}/{len(selected_info)} projects taught")
+        if significant or moderate or minimal:
+            parts = []
+            if significant:
+                parts.append(f"{significant} significant")
+            if moderate:
+                parts.append(f"{moderate} moderate")
+            if minimal:
+                parts.append(f"{minimal} minimal")
+            print(f"   Impact: {', '.join(parts)}")
+
+        # File operations summary
+        if total_files_migrated or total_files_merged or total_files_cleaned or total_corrupt_cleaned:
+            print(f"\n   File Operations Total:")
+            if total_files_migrated:
+                print(f"      📦 Files migrated to .scf/:  {total_files_migrated}")
+            if total_files_merged:
+                print(f"      🔀 Data sources merged:      {total_files_merged}")
+            if total_files_cleaned:
+                print(f"      🧹 Legacy files cleaned:     {total_files_cleaned}")
+            if total_corrupt_cleaned:
+                print(f"      🔧 Corrupt lines fixed:      {total_corrupt_cleaned}")
+
+        # Hub knowledge summary
+        if hub_learnings_info['total'] > 0:
+            print(f"\n   Hub Knowledge Now Available:")
+            if hub_learnings_info['ide']:
+                print(f"      🔧 IDE Configs: {', '.join(hub_learnings_info['ide'][:3])}" +
+                      (f" (+{len(hub_learnings_info['ide'])-3} more)" if len(hub_learnings_info['ide']) > 3 else ""))
+            if hub_learnings_info['patterns']:
+                print(f"      📐 Patterns: {', '.join(hub_learnings_info['patterns'][:3])}" +
+                      (f" (+{len(hub_learnings_info['patterns'])-3} more)" if len(hub_learnings_info['patterns']) > 3 else ""))
+            if hub_learnings_info['other']:
+                print(f"      📚 Project Learnings: {len(hub_learnings_info['other'])} file(s)")
+
+        # Errors
+        if all_errors:
+            print(f"\n   ⚠️  {len(all_errors)} error(s) occurred - check Settings > Error Log")
+            self._log_errors('teach_menu', all_errors)
+
+        # Benefit statement
+        if taught_count > 0:
+            print(f"\n   ─────────────────────────────────────────────────────")
+            if significant > 0:
+                print(f"   💡 {significant} project(s) now have access to ecosystem learnings!")
+                print(f"      LLMs working in these projects can apply hub patterns.")
+            elif moderate > 0:
+                print(f"   ✨ {moderate} project(s) cleaned up and synchronized.")
+        else:
+            print(f"\n   ℹ️  All projects already up to date with hub version {hub_version[:8]}...")
+
         self.wait_for_enter()
 
     def stats_menu(self):
@@ -2140,16 +3393,56 @@ class SCFHubMenu:
             learnings_dir = self.hub_path / 'learnings'
             learning_count = len(list(learnings_dir.glob('*.json'))) if learnings_dir.exists() else 0
 
+            # Check for outdated projects (synced before latest hub learning was added)
+            outdated_projects = []
+            if learnings_dir.exists() and learning_count > 0:
+                # Get most recent learning file modification time
+                latest_learning_time = None
+                for lf in learnings_dir.glob('*.json'):
+                    try:
+                        mtime = lf.stat().st_mtime
+                        if latest_learning_time is None or mtime > latest_learning_time:
+                            latest_learning_time = mtime
+                    except:
+                        pass
+
+                if latest_learning_time:
+                    for p in scf_enabled:
+                        last_sync = p.get('last_sync')
+                        if last_sync:
+                            try:
+                                sync_time = datetime.fromisoformat(last_sync.replace('Z', '+00:00')).timestamp()
+                                if sync_time < latest_learning_time:
+                                    outdated_projects.append(p)
+                            except:
+                                pass
+
+            # Check for projects with unpushed git changes
+            unpushed_projects = []
+            uncommitted_projects = []
+            for p in projects:
+                git = p.get('git')
+                if git and git.get('has_repo'):
+                    if git.get('has_uncommitted'):
+                        uncommitted_projects.append(p)
+                    elif git.get('has_remote') and not git.get('is_pushed'):
+                        unpushed_projects.append(p)
+
             # Build actionable recommendations
             actions = []
             if regular:
                 actions.append(('enable', f"Enable SCF on {len(regular)} project(s)", regular))
             if never_synced:
                 actions.append(('sync', f"Sync {len(never_synced)} project(s) that never synced", never_synced))
+            if outdated_projects:
+                actions.append(('teach', f"Teach {len(outdated_projects)} project(s) with new hub learnings", outdated_projects))
             if len(projects) == 0:
                 actions.append(('scan', "Scan for projects to add", None))
             if learning_count == 0 and scf_enabled:
                 actions.append(('learn', "Learn patterns from SCF-enabled projects", scf_enabled))
+
+            # Get hub git info
+            hub_git = self._get_git_info(self.hub_path) if (self.hub_path / '.git').exists() else None
 
             print(f"""
 ╔══════════════════════════════════════════════════════════════╗
@@ -2162,10 +3455,16 @@ class SCFHubMenu:
    SCF-enabled:         {len(scf_enabled)}
    Regular:             {len(regular)}
    Never synced:        {len(never_synced)}
+   Outdated:            {len(outdated_projects)}
 
    🧠 Learnings
    ─────────────────────────────────────
    Patterns stored:     {learning_count}
+
+   📊 Git Status
+   ─────────────────────────────────────
+   Uncommitted changes: {len(uncommitted_projects)}
+   Unpushed commits:    {len(unpushed_projects)}
 """)
 
             if actions:
@@ -2204,10 +3503,183 @@ class SCFHubMenu:
             self.add_project()  # Reuse add project flow which scans
         elif action_type == 'learn':
             self._learn_from_projects(items)
+        elif action_type == 'teach':
+            self._teach_outdated_projects(items)
+
+    def _teach_outdated_projects(self, projects: list):
+        """Teach outdated projects - push hub learnings to them"""
+        self.clear_screen()
+        registry = self.load_registry()
+
+        print("\n   📚 Teach Outdated Projects")
+        print("   ─────────────────────────────────────")
+        print("   These projects synced before new learnings were added.\n")
+
+        # Display projects by group
+        project_map = self._display_projects_by_group(projects, registry)
+
+        print(f"\n   Selection (1,3,5 or 1-{len(projects)} or 'a' for all) [all]")
+        print("   c. Cancel\n")
+        selection = input("   > ").strip().lower()
+
+        indices = self._parse_selection(selection, len(projects))
+        if indices is None:  # Explicit cancel
+            return
+        if not indices:
+            print("   ❌ No valid selection - please enter numbers from the list above")
+            self.wait_for_enter()
+            return
+
+        selected = [project_map[i + 1] for i in indices if (i + 1) in project_map]
+        if not selected:
+            print("   ❌ No valid projects selected")
+            self.wait_for_enter()
+            return
+
+        # Gather hub learnings info
+        learnings_dir = self.hub_path / 'learnings'
+        hub_learnings_count = 0
+        if learnings_dir.exists():
+            hub_learnings_count = len(list(learnings_dir.rglob('*.json')))
+
+        print(f"\n   Teaching {len(selected)} project(s)...\n")
+
+        taught_count = 0
+        consolidated_count = 0
+        total_corrupt_cleaned = 0
+        total_files_migrated = 0
+        total_files_cleaned = 0
+        all_errors = []
+        teaching_details = []  # Track per-project actions
+
+        for proj in selected:
+            proj_path = Path(proj['path']).expanduser()
+            proj_detail = {'name': proj['name'], 'actions': [], 'impact': 'minimal'}
+            print(f"   ┌─ {proj['name']}")
+
+            if not proj_path.exists():
+                print(f"   │  ❌ Path not found")
+                print(f"   └──────────────────────────────────")
+                proj_detail['actions'].append('path not found')
+                teaching_details.append(proj_detail)
+                continue
+
+            try:
+                scf_dir = proj_path / '.scf'
+                scf_dir.mkdir(exist_ok=True)
+
+                # First, consolidate any legacy SCF files
+                consolidation = self._consolidate_scf_files(proj_path)
+                if consolidation['errors']:
+                    all_errors.extend([f"{proj['name']}: {e}" for e in consolidation['errors']])
+
+                # Report what happened
+                if consolidation['migrated']:
+                    total_files_migrated += len(consolidation['migrated'])
+                    print(f"   │  📦 Migrated {len(consolidation['migrated'])} file(s) to .scf/")
+                    proj_detail['actions'].append(f"migrated {len(consolidation['migrated'])}")
+                    proj_detail['impact'] = 'significant'
+                if consolidation['merged']:
+                    print(f"   │  🔀 Merged {len(consolidation['merged'])} data source(s)")
+                    proj_detail['actions'].append(f"merged {len(consolidation['merged'])}")
+                    proj_detail['impact'] = 'moderate' if proj_detail['impact'] == 'minimal' else proj_detail['impact']
+                if consolidation['cleaned']:
+                    total_files_cleaned += len(consolidation['cleaned'])
+                    print(f"   │  🧹 Cleaned {len(consolidation['cleaned'])} legacy file(s)")
+                    proj_detail['actions'].append(f"cleaned {len(consolidation['cleaned'])}")
+                if consolidation['corrupt_lines_cleaned'] > 0:
+                    total_corrupt_cleaned += consolidation['corrupt_lines_cleaned']
+                    print(f"   │  🔧 Fixed {consolidation['corrupt_lines_cleaned']} corrupt line(s)")
+                    proj_detail['actions'].append(f"fixed {consolidation['corrupt_lines_cleaned']} corrupt")
+
+                # Update kb-sync.json
+                kb_sync_path = scf_dir / 'kb-sync.json'
+                kb_sync = {}
+                if kb_sync_path.exists():
+                    try:
+                        kb_sync = json.loads(kb_sync_path.read_text())
+                    except:
+                        pass
+
+                hub_version = self._get_hub_version()
+                kb_sync['last_sync_date'] = datetime.now(timezone.utc).isoformat()
+                kb_sync['hub_kb_version'] = datetime.now(timezone.utc).isoformat()
+                kb_sync['hub_version'] = hub_version
+                kb_sync['hub_path'] = str(self.hub_path)
+
+                with open(kb_sync_path, 'w') as f:
+                    json.dump(kb_sync, f, indent=2)
+
+                # Update registry
+                for p in registry.get('projects', []):
+                    if p['name'] == proj['name']:
+                        p['last_sync'] = datetime.now(timezone.utc).isoformat()
+                        break
+
+                taught_count += 1
+                if consolidation['migrated'] or consolidation['merged']:
+                    consolidated_count += 1
+
+                if hub_learnings_count > 0:
+                    print(f"   │  📚 Now linked to {hub_learnings_count} hub learning(s)")
+                    proj_detail['actions'].append(f"linked {hub_learnings_count} learnings")
+                    proj_detail['impact'] = 'significant'
+
+                proj_detail['actions'].append('synced')
+                print(f"   │  ✅ Synced with hub version {hub_version[:8]}")
+                print(f"   └──────────────────────────────────")
+                teaching_details.append(proj_detail)
+
+            except Exception as e:
+                print(f"   │  ❌ Error: {e}")
+                print(f"   └──────────────────────────────────")
+                all_errors.append(f"{proj['name']}: {str(e)}")
+                proj_detail['actions'].append(f'error')
+                teaching_details.append(proj_detail)
+
+        self.save_registry(registry)
+
+        # ═══════════════════════════════════════════════════════
+        # SUMMARY
+        # ═══════════════════════════════════════════════════════
+        print(f"\n   ═══════════════════════════════════════════════════")
+        print(f"   📊 TEACHING SUMMARY")
+        print(f"   ═══════════════════════════════════════════════════")
+
+        # Per-project breakdown
+        print(f"\n   By Project: (🟢 significant | 🟡 moderate | ⚪ minimal/current)")
+        for detail in teaching_details:
+            impact_icon = {'significant': '🟢', 'moderate': '🟡', 'minimal': '⚪'}.get(detail['impact'], '⚪')
+            actions_str = ', '.join(detail['actions']) if detail['actions'] else 'no changes'
+            print(f"      {impact_icon} {detail['name']}: {actions_str}")
+
+        print(f"\n   Overall: {taught_count}/{len(selected)} projects taught")
+
+        if total_files_migrated or total_files_cleaned or total_corrupt_cleaned:
+            print(f"\n   File Operations Total:")
+            if total_files_migrated:
+                print(f"      📦 Files migrated:       {total_files_migrated}")
+            if total_files_cleaned:
+                print(f"      🧹 Legacy files cleaned: {total_files_cleaned}")
+            if total_corrupt_cleaned:
+                print(f"      🔧 Corrupt lines fixed:  {total_corrupt_cleaned}")
+
+        if hub_learnings_count > 0:
+            print(f"\n   Hub Knowledge Available: {hub_learnings_count} learning file(s)")
+            print(f"   💡 LLMs in these projects can now access ecosystem patterns!")
+
+        # Log any errors
+        if all_errors:
+            print(f"\n   ⚠️  {len(all_errors)} error(s) occurred - check Settings > Error Log")
+            self._log_errors("teach_outdated_projects", all_errors)
+
+        self.wait_for_enter()
 
     def _enable_scf_batch(self, projects: list):
         """Enable SCF on multiple projects with preview and verification"""
         self.clear_screen()
+        registry = self.load_registry()
+
         print("\n   🚀 Enable SCF on Projects")
         print("   ─────────────────────────────────────\n")
 
@@ -2256,22 +3728,57 @@ class SCFHubMenu:
 
             project_status.append(status)
 
-        # Display preview
-        for i, status in enumerate(project_status, 1):
-            proj = status['proj']
-            print(f"   {i}. {proj['name']}")
-            for action in status['actions']:
-                print(f"      {action}")
-            if status['existing']:
-                print(f"      📂 Existing: {', '.join(status['existing'][:4])}{'...' if len(status['existing']) > 4 else ''}")
+        # Organize preview by groups
+        groups = registry.get('groups', {})
+        grouped_status = {}
+        ungrouped_status = []
+
+        for status in project_status:
+            grp = status['proj'].get('group')
+            if grp:
+                if grp not in grouped_status:
+                    grouped_status[grp] = []
+                grouped_status[grp].append(status)
+            else:
+                ungrouped_status.append(status)
+
+        idx = 1
+
+        for group_name in sorted(grouped_status.keys()):
+            group_desc = groups.get(group_name, {}).get('description', '')
+            desc_str = f" - {group_desc}" if group_desc else ""
+            print(f"   📂 {group_name}{desc_str}")
+
+            for status in grouped_status[group_name]:
+                proj = status['proj']
+                print(f"   {idx:2}. {proj['name']}")
+                for action in status['actions']:
+                    print(f"       {action}")
+                if status['existing']:
+                    print(f"       📂 Existing: {', '.join(status['existing'][:4])}{'...' if len(status['existing']) > 4 else ''}")
+                idx += 1
+            print()
+
+        if ungrouped_status:
+            if grouped_status:
+                print(f"   📁 Ungrouped")
+            for status in ungrouped_status:
+                proj = status['proj']
+                print(f"   {idx:2}. {proj['name']}")
+                for action in status['actions']:
+                    print(f"       {action}")
+                if status['existing']:
+                    print(f"       📂 Existing: {', '.join(status['existing'][:4])}{'...' if len(status['existing']) > 4 else ''}")
+                idx += 1
             print()
 
         # Confirm
         print("   ─────────────────────────────────────")
         print("   ⚠️  Existing SCF files will NOT be overwritten")
-        confirm = input("\n   Proceed? [Y/n]: ").strip().lower()
+        print("\n   [y] Proceed  [n/Enter] Cancel")
+        confirm = input("\n   > ").strip().lower()
 
-        if confirm == 'n':
+        if confirm != 'y':
             print("\n   Cancelled.")
             self.wait_for_enter()
             return
@@ -2325,24 +3832,31 @@ class SCFHubMenu:
     def _sync_projects_batch(self, projects: list):
         """Sync multiple projects"""
         self.clear_screen()
+        registry = self.load_registry()
+
         print("\n   🔄 Sync Projects")
         print("   ─────────────────────────────────────\n")
 
-        for i, proj in enumerate(projects, 1):
-            print(f"   {i}. {proj['name']}")
+        # Display projects by group
+        project_map = self._display_projects_by_group(projects, registry)
 
-        print(f"\n   Selection (1,3,5 or 1-{len(projects)}) [all]: ", end="")
-        selection = input().strip().lower()
-        if selection in ('b', 'c'):
-            return
+        print(f"\n   Selection (1,3,5 or 1-{len(projects)} or 'a' for all) [all]")
+        print("   c. Cancel\n")
+        selection = input("   > ").strip().lower()
 
         indices = self._parse_selection(selection, len(projects))
+        if indices is None:  # Explicit cancel
+            return
         if not indices:
-            print("   No valid selection")
+            print("   ❌ No valid selection - please enter numbers from the list above")
             self.wait_for_enter()
             return
 
-        selected = [projects[i] for i in indices]
+        selected = [project_map[i + 1] for i in indices if (i + 1) in project_map]
+        if not selected:
+            print("   ❌ No valid projects selected")
+            self.wait_for_enter()
+            return
         print(f"\n   Syncing {len(selected)} project(s)...")
 
         for proj in selected:
@@ -2380,24 +3894,31 @@ class SCFHubMenu:
     def _learn_from_projects(self, projects: list):
         """Learn patterns from projects"""
         self.clear_screen()
+        registry = self.load_registry()
+
         print("\n   🧠 Learn from Projects")
         print("   ─────────────────────────────────────\n")
 
-        for i, proj in enumerate(projects, 1):
-            print(f"   {i}. {proj['name']}")
+        # Display projects by group
+        project_map = self._display_projects_by_group(projects, registry)
 
-        print(f"\n   Selection (1,3,5 or 1-{len(projects)}) [all]: ", end="")
-        selection = input().strip().lower()
-        if selection in ('b', 'c'):
-            return
+        print(f"\n   Selection (1,3,5 or 1-{len(projects)} or 'a' for all) [all]")
+        print("   c. Cancel\n")
+        selection = input("   > ").strip().lower()
 
         indices = self._parse_selection(selection, len(projects))
+        if indices is None:  # Explicit cancel
+            return
         if not indices:
-            print("   No valid selection")
+            print("   ❌ No valid selection - please enter numbers from the list above")
             self.wait_for_enter()
             return
 
-        selected = [projects[i] for i in indices]
+        selected = [project_map[i + 1] for i in indices if (i + 1) in project_map]
+        if not selected:
+            print("   ❌ No valid projects selected")
+            self.wait_for_enter()
+            return
         print(f"\n   Learning from {len(selected)} project(s)...")
 
         learnings_dir = self.hub_path / 'learnings'
@@ -2421,52 +3942,80 @@ class SCFHubMenu:
             project_learnings = []
 
             # Extract high-impact decisions from BUILDSTATE.json
-            if buildstate_path.exists():
-                try:
-                    buildstate = json.loads(buildstate_path.read_text())
-                    decisions = buildstate.get('decisions', [])
-                    high_impact = [d for d in decisions if d.get('impact', 0) >= 8]
-                    for decision in high_impact:
-                        project_learnings.append({
-                            'type': 'decision',
-                            'source_project': proj['name'],
-                            'source_path': str(proj_path),
-                            'date': decision.get('date'),
-                            'topic': decision.get('decision'),
-                            'rationale': decision.get('rationale'),
-                            'impact': decision.get('impact'),
-                            'learned_at': datetime.now(timezone.utc).isoformat()
-                        })
-                    if high_impact:
-                        print(f"      • Found {len(high_impact)} high-impact decisions")
-                except Exception as e:
-                    print(f"      ⚠️  Error reading BUILDSTATE: {e}")
+            # Try multiple buildstate locations
+            buildstate_paths = [
+                scf_dir / 'BUILDSTATE.json',
+                scf_dir / 'buildstate.json',
+                proj_path / 'BUILDSTATE.json',
+                proj_path / 'buildstate.json'
+            ]
+
+            for buildstate_path in buildstate_paths:
+                if buildstate_path.exists():
+                    try:
+                        content = buildstate_path.read_text().strip()
+                        if not content:
+                            continue  # Skip empty files
+                        buildstate = json.loads(content)
+                        decisions = buildstate.get('decisions', [])
+                        high_impact = [d for d in decisions if d.get('impact', 0) >= 8]
+                        for decision in high_impact:
+                            project_learnings.append({
+                                'type': 'decision',
+                                'source_project': proj['name'],
+                                'source_path': str(proj_path),
+                                'date': decision.get('date'),
+                                'topic': decision.get('decision'),
+                                'rationale': decision.get('rationale'),
+                                'impact': decision.get('impact'),
+                                'learned_at': datetime.now(timezone.utc).isoformat()
+                            })
+                        if high_impact:
+                            print(f"      • Found {len(high_impact)} high-impact decisions")
+                        break  # Found valid buildstate, stop searching
+                    except json.JSONDecodeError as e:
+                        print(f"      ⚠️  Invalid JSON in {buildstate_path.name}: {e}")
+                    except Exception as e:
+                        print(f"      ⚠️  Error reading {buildstate_path.name}: {e}")
 
             # Extract offers from spoke-signals.jsonl
-            if signals_path.exists():
-                try:
-                    offers = []
-                    with open(signals_path) as f:
-                        for line in f:
-                            if line.strip():
-                                signal = json.loads(line)
-                                for offer in signal.get('offers', []):
-                                    if offer.get('impact', 0) >= 8:
-                                        offers.append({
-                                            'type': offer.get('type', 'pattern'),
-                                            'source_project': proj['name'],
-                                            'source_path': str(proj_path),
-                                            'date': signal.get('timestamp'),
-                                            'topic': offer.get('topic'),
-                                            'context': offer.get('context'),
-                                            'impact': offer.get('impact'),
-                                            'learned_at': datetime.now(timezone.utc).isoformat()
-                                        })
-                    project_learnings.extend(offers)
-                    if offers:
-                        print(f"      • Found {len(offers)} signaled learnings")
-                except Exception as e:
-                    print(f"      ⚠️  Error reading signals: {e}")
+            # Also check root location for legacy
+            signals_paths = [signals_path, proj_path / 'spoke-signals.jsonl']
+            for sig_path in signals_paths:
+                if sig_path.exists():
+                    try:
+                        offers = []
+                        parse_errors = 0
+                        with open(sig_path) as f:
+                            for line_num, line in enumerate(f, 1):
+                                line = line.strip()
+                                if line:
+                                    try:
+                                        signal = json.loads(line)
+                                        if not isinstance(signal, dict):
+                                            continue
+                                        for offer in signal.get('offers', []):
+                                            if offer.get('impact', 0) >= 8:
+                                                offers.append({
+                                                    'type': offer.get('type', 'pattern'),
+                                                    'source_project': proj['name'],
+                                                    'source_path': str(proj_path),
+                                                    'date': signal.get('timestamp'),
+                                                    'topic': offer.get('topic'),
+                                                    'context': offer.get('context'),
+                                                    'impact': offer.get('impact'),
+                                                    'learned_at': datetime.now(timezone.utc).isoformat()
+                                                })
+                                    except json.JSONDecodeError:
+                                        parse_errors += 1
+                        project_learnings.extend(offers)
+                        if offers:
+                            print(f"      • Found {len(offers)} signaled learnings")
+                        if parse_errors:
+                            print(f"      ⚠️  {parse_errors} malformed signal line(s) skipped")
+                        break  # Found signals file, stop searching
+                    except Exception as e:
+                        print(f"      ⚠️  Error reading signals: {e}")
 
             # Save learnings
             if project_learnings:
@@ -2498,11 +4047,398 @@ class SCFHubMenu:
 
         self.wait_for_enter()
 
+    def knowledge_base_menu(self):
+        """Browse the knowledge base (learnings)"""
+        while True:
+            self.clear_screen()
+            learnings_dir = self.hub_path / 'learnings'
+
+            # Load all learnings
+            all_learnings = []
+            learning_files = []
+            if learnings_dir.exists():
+                learning_files = sorted(learnings_dir.glob('*.json'))
+                for lf in learning_files:
+                    try:
+                        data = json.loads(lf.read_text())
+                        if isinstance(data, list):
+                            for item in data:
+                                item['_source_file'] = lf.name
+                            all_learnings.extend(data)
+                    except:
+                        pass
+
+            # Group by type
+            by_type = {}
+            for learning in all_learnings:
+                ltype = learning.get('type', 'unknown')
+                if ltype not in by_type:
+                    by_type[ltype] = []
+                by_type[ltype].append(learning)
+
+            # Group by source project
+            by_project = {}
+            for learning in all_learnings:
+                proj = learning.get('source_project', 'unknown')
+                if proj not in by_project:
+                    by_project[proj] = []
+                by_project[proj].append(learning)
+
+            print(f"""
+╔══════════════════════════════════════════════════════════════╗
+║                    📖 Knowledge Base                         ║
+╚══════════════════════════════════════════════════════════════╝
+
+   📊 Summary
+   ─────────────────────────────────────
+   Total learnings:     {len(all_learnings)}
+   Learning files:      {len(learning_files)}
+   Source projects:     {len(by_project)}
+""")
+            if by_type:
+                print("   By Type:")
+                for ltype, items in sorted(by_type.items()):
+                    print(f"      • {ltype}: {len(items)}")
+                print()
+
+            print("""   ─────────────────────────────────────
+   1. 📋 Browse all learnings
+   2. 📁 Browse by project
+   3. 🏷️  Browse by type
+   4. 🔍 Search learnings
+   5. 📄 View learning files
+
+   b. Back to main menu
+""")
+            choice = self.get_choice(5)
+
+            if choice == 'b':
+                return
+            elif choice == '1':
+                self._browse_all_learnings(all_learnings)
+            elif choice == '2':
+                self._browse_by_project(by_project)
+            elif choice == '3':
+                self._browse_by_type(by_type)
+            elif choice == '4':
+                self._search_learnings(all_learnings)
+            elif choice == '5':
+                self._view_learning_files(learning_files)
+
+    def _browse_all_learnings(self, learnings: list):
+        """Browse all learnings with pagination"""
+        if not learnings:
+            self.clear_screen()
+            print("\n   📭 No learnings found.")
+            print("   Use 'Learn' to gather learnings from your projects.")
+            self.wait_for_enter()
+            return
+
+        page = 0
+        per_page = 5
+
+        while True:
+            self.clear_screen()
+            total_pages = (len(learnings) - 1) // per_page + 1
+            start = page * per_page
+            end = min(start + per_page, len(learnings))
+
+            title = f"📋 All Learnings (Page {page + 1}/{total_pages})"
+            title_padding = (62 - len(title)) // 2
+            title_line = f"{' ' * title_padding}{title}{' ' * (62 - title_padding - len(title))}"
+            print(f"""
+╔══════════════════════════════════════════════════════════════╗
+║{title_line}║
+╚══════════════════════════════════════════════════════════════╝
+""")
+            for i, learning in enumerate(learnings[start:end], start + 1):
+                self._print_learning_summary(i, learning)
+                print()
+
+            print("   ─────────────────────────────────────")
+            nav = []
+            if page > 0:
+                nav.append("p. Previous")
+            if page < total_pages - 1:
+                nav.append("n. Next")
+            nav.append(f"1-{end - start}. View details")
+            nav.append("b. Back")
+            print(f"   {' | '.join(nav)}")
+
+            choice = input("\n   > ").strip().lower()
+
+            if choice == 'b':
+                return
+            elif choice == 'p' and page > 0:
+                page -= 1
+            elif choice == 'n' and page < total_pages - 1:
+                page += 1
+            elif choice.isdigit():
+                idx = int(choice)
+                if 1 <= idx <= (end - start):
+                    self._view_learning_detail(learnings[start + idx - 1])
+
+    def _browse_by_project(self, by_project: dict):
+        """Browse learnings grouped by source project"""
+        if not by_project:
+            self.clear_screen()
+            print("\n   📭 No learnings found.")
+            self.wait_for_enter()
+            return
+
+        while True:
+            self.clear_screen()
+            projects = sorted(by_project.keys())
+
+            print(f"""
+╔══════════════════════════════════════════════════════════════╗
+║              📁 Learnings by Project                         ║
+╚══════════════════════════════════════════════════════════════╝
+""")
+            for i, proj in enumerate(projects, 1):
+                count = len(by_project[proj])
+                types = set(l.get('type', 'unknown') for l in by_project[proj])
+                print(f"   {i:2}. {proj} ({count} learnings)")
+                print(f"       Types: {', '.join(sorted(types))}")
+
+            print("\n   ─────────────────────────────────────")
+            print(f"   Enter 1-{len(projects)} to view project learnings")
+            print("   c. Cancel\n")
+
+            choice = input("   > ").strip().lower()
+
+            if choice == 'c':
+                return
+
+            if choice.isdigit():
+                idx = int(choice)
+                if 1 <= idx <= len(projects):
+                    proj_name = projects[idx - 1]
+                    self._browse_all_learnings(by_project[proj_name])
+
+    def _browse_by_type(self, by_type: dict):
+        """Browse learnings grouped by type"""
+        if not by_type:
+            self.clear_screen()
+            print("\n   📭 No learnings found.")
+            self.wait_for_enter()
+            return
+
+        while True:
+            self.clear_screen()
+            types = sorted(by_type.keys())
+
+            print(f"""
+╔══════════════════════════════════════════════════════════════╗
+║              🏷️  Learnings by Type                            ║
+╚══════════════════════════════════════════════════════════════╝
+""")
+            for i, ltype in enumerate(types, 1):
+                count = len(by_type[ltype])
+                projects = set(l.get('source_project', 'unknown') for l in by_type[ltype])
+                print(f"   {i:2}. {ltype} ({count} learnings)")
+                print(f"       From: {', '.join(sorted(projects)[:3])}{'...' if len(projects) > 3 else ''}")
+
+            print("\n   ─────────────────────────────────────")
+            print(f"   Enter 1-{len(types)} to view type learnings")
+            print("   c. Cancel\n")
+
+            choice = input("   > ").strip().lower()
+
+            if choice == 'c':
+                return
+
+            if choice.isdigit():
+                idx = int(choice)
+                if 1 <= idx <= len(types):
+                    type_name = types[idx - 1]
+                    self._browse_all_learnings(by_type[type_name])
+
+    def _search_learnings(self, learnings: list):
+        """Search learnings by keyword"""
+        self.clear_screen()
+        print(f"""
+╔══════════════════════════════════════════════════════════════╗
+║              🔍 Search Learnings                             ║
+╚══════════════════════════════════════════════════════════════╝
+""")
+        print("   Enter search term (searches topic, rationale, context)")
+        print("   c. Cancel\n")
+
+        query = input("   Search: ").strip().lower()
+
+        if query == 'c' or not query:
+            return
+
+        # Search in various fields
+        results = []
+        for learning in learnings:
+            searchable = ' '.join([
+                str(learning.get('topic', '')),
+                str(learning.get('rationale', '')),
+                str(learning.get('context', '')),
+                str(learning.get('source_project', '')),
+                str(learning.get('type', ''))
+            ]).lower()
+
+            if query in searchable:
+                results.append(learning)
+
+        if not results:
+            print(f"\n   No results found for '{query}'")
+            self.wait_for_enter()
+            return
+
+        print(f"\n   Found {len(results)} result(s)")
+        self.wait_for_enter()
+        self._browse_all_learnings(results)
+
+    def _view_learning_files(self, learning_files: list):
+        """View raw learning files"""
+        if not learning_files:
+            self.clear_screen()
+            print("\n   📭 No learning files found.")
+            self.wait_for_enter()
+            return
+
+        while True:
+            self.clear_screen()
+            print(f"""
+╔══════════════════════════════════════════════════════════════╗
+║              📄 Learning Files                               ║
+╚══════════════════════════════════════════════════════════════╝
+""")
+            for i, lf in enumerate(learning_files, 1):
+                try:
+                    data = json.loads(lf.read_text())
+                    count = len(data) if isinstance(data, list) else 1
+                    size = lf.stat().st_size
+                    mtime = datetime.fromtimestamp(lf.stat().st_mtime).strftime('%Y-%m-%d %H:%M')
+                    print(f"   {i:2}. {lf.name}")
+                    print(f"       {count} learnings | {self._format_size(size)} | Modified: {mtime}")
+                except:
+                    print(f"   {i:2}. {lf.name} (error reading)")
+
+            print("\n   ─────────────────────────────────────")
+            print(f"   Enter 1-{len(learning_files)} to view file contents")
+            print("   c. Cancel\n")
+
+            choice = input("   > ").strip().lower()
+
+            if choice == 'c':
+                return
+
+            if choice.isdigit():
+                idx = int(choice)
+                if 1 <= idx <= len(learning_files):
+                    self._view_file_contents(learning_files[idx - 1])
+
+    def _view_file_contents(self, filepath: Path):
+        """View contents of a learning file"""
+        self.clear_screen()
+        print(f"\n   📄 {filepath.name}")
+        print("   ─────────────────────────────────────\n")
+
+        try:
+            data = json.loads(filepath.read_text())
+            if isinstance(data, list):
+                for i, learning in enumerate(data, 1):
+                    self._print_learning_summary(i, learning)
+                    print()
+            else:
+                print(json.dumps(data, indent=2)[:2000])
+        except Exception as e:
+            print(f"   Error reading file: {e}")
+
+        self.wait_for_enter()
+
+    def _print_learning_summary(self, num: int, learning: dict):
+        """Print a learning summary"""
+        ltype = learning.get('type', 'unknown')
+        topic = learning.get('topic', 'No topic')[:50]
+        project = learning.get('source_project', 'unknown')
+        impact = learning.get('impact', '?')
+        date = learning.get('date', learning.get('learned_at', ''))[:10] if learning.get('date') or learning.get('learned_at') else ''
+
+        type_icons = {
+            'decision': '📋',
+            'pattern': '🔄',
+            'solution': '💡',
+            'optimization': '⚡',
+            'bugfix': '🐛',
+            'architecture': '🏗️'
+        }
+        icon = type_icons.get(ltype, '📝')
+
+        print(f"   {num:2}. {icon} [{ltype}] {topic}")
+        print(f"       From: {project} | Impact: {impact} | {date}")
+
+    def _view_learning_detail(self, learning: dict):
+        """View detailed learning information"""
+        self.clear_screen()
+
+        ltype = learning.get('type', 'unknown')
+        type_icons = {
+            'decision': '📋',
+            'pattern': '🔄',
+            'solution': '💡',
+            'optimization': '⚡',
+            'bugfix': '🐛',
+            'architecture': '🏗️'
+        }
+        icon = type_icons.get(ltype, '📝')
+
+        print(f"""
+╔══════════════════════════════════════════════════════════════╗
+║              {icon} Learning Detail                            ║
+╚══════════════════════════════════════════════════════════════╝
+
+   Type:     {ltype}
+   Topic:    {learning.get('topic', 'No topic')}
+   Impact:   {learning.get('impact', '?')}/10
+
+   Source
+   ─────────────────────────────────────
+   Project:  {learning.get('source_project', 'unknown')}
+   Path:     {learning.get('source_path', 'unknown')}
+   Date:     {learning.get('date', learning.get('learned_at', 'unknown'))}
+""")
+        if learning.get('rationale'):
+            print("   Rationale")
+            print("   ─────────────────────────────────────")
+            # Word wrap rationale
+            rationale = learning['rationale']
+            for i in range(0, len(rationale), 55):
+                print(f"   {rationale[i:i+55]}")
+            print()
+
+        if learning.get('context'):
+            print("   Context")
+            print("   ─────────────────────────────────────")
+            context = learning['context']
+            for i in range(0, len(context), 55):
+                print(f"   {context[i:i+55]}")
+            print()
+
+        if learning.get('_source_file'):
+            print(f"   📄 Source file: {learning['_source_file']}")
+
+        self.wait_for_enter()
+
     def settings_menu(self):
         """Hub settings menu"""
         while True:
             self.clear_screen()
             profile = self.load_profile()
+
+            # Count error logs
+            log_file = self.hub_path / 'logs' / 'errors.jsonl'
+            error_count = 0
+            if log_file.exists():
+                try:
+                    error_count = sum(1 for _ in open(log_file))
+                except:
+                    pass
 
             print(f"""
 ╔══════════════════════════════════════════════════════════════╗
@@ -2520,10 +4456,12 @@ class SCFHubMenu:
    2. ✏️  Edit focus
    3. ✏️  Edit AI collaboration style
    4. 📂 Open hub-profile.json
+   5. 📋 View error log ({error_count} entries)
+   6. 🗑️  Clear error log
 
    b. Back
 """)
-            choice = self.get_choice(4)
+            choice = self.get_choice(6)
 
             if choice == 'b':
                 return
@@ -2557,6 +4495,88 @@ class SCFHubMenu:
                 import os
                 editor = os.environ.get('EDITOR', 'nano')
                 os.system(f'{editor} "{self.hub_path}/hub-profile.json"')
+            elif choice == '5':
+                self._view_error_log()
+            elif choice == '6':
+                self._clear_error_log()
+
+    def _view_error_log(self):
+        """View the error log"""
+        self.clear_screen()
+        log_file = self.hub_path / 'logs' / 'errors.jsonl'
+
+        print(f"""
+╔══════════════════════════════════════════════════════════════╗
+║                    📋 Error Log                              ║
+╚══════════════════════════════════════════════════════════════╝
+""")
+        if not log_file.exists():
+            print("   📭 No errors logged yet. That's good!")
+            self.wait_for_enter()
+            return
+
+        try:
+            entries = []
+            with open(log_file) as f:
+                for line in f:
+                    if line.strip():
+                        try:
+                            entries.append(json.loads(line))
+                        except:
+                            pass
+
+            if not entries:
+                print("   📭 Error log is empty.")
+                self.wait_for_enter()
+                return
+
+            # Show most recent first
+            entries.reverse()
+
+            print(f"   Showing {min(10, len(entries))} most recent of {len(entries)} total entries\n")
+
+            for entry in entries[:10]:
+                timestamp = entry.get('timestamp', 'unknown')[:19].replace('T', ' ')
+                operation = entry.get('operation', 'unknown')
+                errors = entry.get('errors', [])
+
+                print(f"   [{timestamp}] {operation}")
+                for err in errors[:3]:
+                    print(f"      • {err[:65]}{'...' if len(err) > 65 else ''}")
+                if len(errors) > 3:
+                    print(f"      ... and {len(errors) - 3} more")
+                print()
+
+            print(f"   Log file: {log_file}")
+
+        except Exception as e:
+            print(f"   ❌ Error reading log: {e}")
+
+        self.wait_for_enter()
+
+    def _clear_error_log(self):
+        """Clear the error log"""
+        log_file = self.hub_path / 'logs' / 'errors.jsonl'
+
+        if not log_file.exists():
+            print("\n   📭 No error log to clear.")
+            self.wait_for_enter()
+            return
+
+        print("\n   ⚠️  This will delete all logged errors.")
+        print("   [y] Clear log  [n/Enter] Cancel")
+        confirm = input("\n   > ").strip().lower()
+
+        if confirm == 'y':
+            try:
+                log_file.unlink()
+                print("   ✅ Error log cleared.")
+            except Exception as e:
+                print(f"   ❌ Error clearing log: {e}")
+        else:
+            print("   Cancelled.")
+
+        self.wait_for_enter()
 
     def _save_profile(self, profile: dict):
         """Save hub profile"""
@@ -3149,8 +5169,14 @@ Examples:
                 # Read and process signals
                 # For now, just count them
                 with open(signals_path) as f:
-                    signals = [json.loads(line) for line in f if line.strip()]
-                    high_impact = [s for s in signals if s.get('offers')]
+                    signals = []
+                    for line in f:
+                        if line.strip():
+                            try:
+                                signals.append(json.loads(line))
+                            except json.JSONDecodeError:
+                                pass  # Skip corrupt lines
+                    high_impact = [s for s in signals if isinstance(s, dict) and s.get('offers')]
                     if high_impact:
                         learned_count += len(high_impact)
                         print(f"      Found {len(high_impact)} high-impact learnings")
