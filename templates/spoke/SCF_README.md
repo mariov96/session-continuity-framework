@@ -8,6 +8,39 @@
 
 ## AI INSTRUCTIONS - READ FIRST
 
+### ⚠️ CONTEXT REFRESH CHECK (Do This First!)
+
+**Every session, check if the `.scf/` folder has been updated since you last worked here:**
+
+```python
+import json
+from pathlib import Path
+from datetime import datetime
+
+scf_path = Path(".scf")
+kb_sync = json.loads((scf_path / "kb-sync.json").read_text()) if (scf_path / "kb-sync.json").exists() else {}
+buildstate = json.loads((scf_path / "BUILDSTATE.json").read_text())
+scf_meta = buildstate.get("_scf_metadata", {})
+
+# Check for new hub teachings
+hub_version = scf_meta.get("hub_reference", {}).get("current_hash_short", "unknown")
+last_teach = scf_meta.get("sync_history", [{}])[-1].get("date", "never") if scf_meta.get("sync_history") else "never"
+
+print(f"Hub version: {hub_version}")
+print(f"Last teach sync: {last_teach}")
+print(f"Days since sync: {scf_meta.get('development_health', {}).get('days_since_sync', 'unknown')}")
+```
+
+**If you see new learnings or policies were added:**
+1. Read this entire file again for updated instructions
+2. Check `kb-sync.json` for new hub knowledge version
+3. Review any new sections in this README (especially "Learnings from Hub")
+4. Apply new patterns to your current work
+
+**Why this matters:** The hub may have pushed new best practices, patterns, or policies since your last session. Incorporating these keeps your work aligned with the broader ecosystem.
+
+---
+
 ### What is SCF?
 
 You're working on a project using the **Session Continuity Framework**. This means:
@@ -204,6 +237,129 @@ When you make a decision with **impact >= 8**, share it:
 - Project-specific implementation details
 - Minor refactorings (impact < 8)
 - Personal preferences without justification
+- **Common knowledge** - Things any competent developer knows
+- **Obvious patterns** - Standard practices documented everywhere
+- **Routine fixes** - Normal debugging without novel insight
+
+### Stay Observant: Proactive Learning Discovery
+
+**As you work, actively notice insights worth sharing.** Don't wait for explicit "high-impact" moments—valuable learnings often emerge from:
+
+**Patterns Worth Signaling:**
+- A non-obvious solution that took multiple attempts to discover
+- A debugging approach that revealed a hidden root cause
+- An architectural decision that prevented future problems
+- A workflow optimization that significantly improved efficiency
+- A gotcha or pitfall that others would likely hit
+
+**🔧 IDE & Tooling Configurations (High Value!):**
+
+Configuration files that improve developer experience are **excellent candidates** for spoke-signals because they:
+- Transfer to ALL projects using that tool
+- Are often discovered through trial and error
+- Compound in value across the ecosystem
+
+**Watch for optimizations in:**
+- `.vscode/settings.json` - Editor preferences, formatters, linting
+- `.vscode/tasks.json` - Build tasks, test runners, automation
+- `.vscode/launch.json` - Debug configurations
+- `.vscode/extensions.json` - Recommended extensions
+- `.cursor/`, `.zed/` - Other IDE configurations
+- `pyproject.toml`, `tsconfig.json` - Language tooling
+- `.editorconfig`, `.prettierrc` - Cross-editor standards
+
+**Signal these with type `ide_optimization`:**
+```json
+{"type": "ide_optimization", "topic": "VS Code task for parallel test watching", "tool": "vscode", "files": ["tasks.json"], "impact": 8, "context": "Runs pytest-watch in background terminal, freeing main terminal for git operations"}
+```
+
+**The hub builds specialized knowledge bases** for each tool. When an LLM detects it's running in VS Code (via environment, file structure, or user mention), it can check if known optimizations are missing and proactively suggest them.
+
+**Struggles Worth Signaling:**
+- Recurring friction points in a technology or library
+- Documentation gaps that caused confusion
+- Edge cases that standard approaches miss
+- Integration challenges between tools/services
+
+**Use Your Judgment - The Quality Filter:**
+
+Before signaling, ask yourself:
+1. **Would this save someone else real time?** (Not just minutes, but hours or days)
+2. **Is this transferable?** (Applies beyond this specific project)
+3. **Is this non-obvious?** (Not the first thing someone would try)
+4. **Did I learn something I didn't expect?** (Genuine insight, not confirmation)
+
+**Example of good judgment:**
+- ❌ "Use async/await for API calls" → Too common
+- ✅ "Batch API calls with 50ms debounce to avoid rate limits while maintaining UX responsiveness" → Specific, actionable, non-obvious
+
+**Signal format for observations:**
+```json
+{"timestamp": "ISO-8601", "by": "AI-Name", "offers": [{"type": "pattern_discovered", "topic": "Descriptive title", "impact": 8, "context": "What you tried, what failed, what worked, and why it matters"}], "flags": {"has_high_impact_learnings": true}}
+```
+
+The ecosystem benefits when you share genuine insights, not volume. One actionable learning beats ten obvious ones.
+
+### 🎯 Environment-Aware Optimization (Proactive Application)
+
+**Detect your environment and apply relevant learnings automatically.**
+
+When starting a session, identify the context:
+```python
+import os
+from pathlib import Path
+
+# Detect IDE environment
+env_hints = {
+    'vscode': Path('.vscode').exists() or os.environ.get('TERM_PROGRAM') == 'vscode',
+    'cursor': Path('.cursor').exists() or 'cursor' in os.environ.get('TERM_PROGRAM', '').lower(),
+    'zed': Path('.zed').exists(),
+    'claude_code': os.environ.get('CLAUDE_CODE') == '1',
+}
+
+detected_env = [k for k, v in env_hints.items() if v]
+print(f"Detected environment: {detected_env}")
+```
+
+**After detecting the environment:**
+
+1. **Check hub learnings** for that tool (e.g., `learnings/ide/vscode.json`)
+2. **Compare with current project** - Are recommended configs missing?
+3. **Proactively suggest** optimizations the user hasn't applied yet
+
+**Example proactive behavior:**
+```markdown
+I notice you're using VS Code but this project is missing some optimizations
+I've learned from other projects:
+
+**Missing from .vscode/tasks.json:**
+- Background test watcher task (saves switching terminals)
+- Quick build task with problem matcher
+
+**Missing from .vscode/settings.json:**
+- Python auto-formatting on save
+- Import organization on save
+
+Would you like me to add these configurations?
+```
+
+**Hub Knowledge Base Structure:**
+The hub organizes tool-specific learnings:
+```
+learnings/
+├── ide/
+│   ├── vscode.json      # VS Code optimizations
+│   ├── cursor.json      # Cursor-specific configs
+│   └── zed.json         # Zed configurations
+├── languages/
+│   ├── python.json      # Python tooling
+│   └── typescript.json  # TS/JS tooling
+└── workflows/
+    ├── testing.json     # Test automation patterns
+    └── ci-cd.json       # CI/CD configurations
+```
+
+This creates a **flywheel effect**: Every project benefits from optimizations discovered anywhere in the ecosystem.
 
 ---
 
@@ -284,6 +440,52 @@ This creates your personal hub for cross-project learnings.
 ./scf init <path>         # Add new spoke
 ./scf hub locate          # Find hub location
 ```
+
+---
+
+## Incorporating New Teachings
+
+When you detect that new teachings have been pushed to this project (via the Context Refresh Check above), follow this process:
+
+### 1. Identify What Changed
+
+Compare the current `_scf_metadata.hub_reference.current_hash_short` with what you remember from your last session. If different, new teachings are available.
+
+### 2. Review New Learnings
+
+Check for new content in:
+- **This file (SCF_README.md)** - Look for new sections, updated policies, or new patterns
+- **kb-sync.json** - Check `hub_kb_version` for version changes
+- **BUILDSTATE.json** - Look at `_scf_metadata.sync_history` for recent syncs
+
+### 3. Apply to Current Work
+
+For each new learning or policy:
+- **Consider relevance** - Does this apply to your current task?
+- **Check conflicts** - Does it conflict with existing project decisions?
+- **Adopt or adapt** - Either apply directly or note why it doesn't fit this project
+
+### 4. Acknowledge Receipt
+
+Update `_session_state` to indicate you've reviewed new teachings:
+```json
+{
+  "_session_state": {
+    "last_modified_by": "Claude",
+    "last_modified_at": "ISO-8601-timestamp",
+    "context_refreshed": true,
+    "hub_version_reviewed": "hash-from-hub-reference"
+  }
+}
+```
+
+### Why This Matters
+
+The SCF ecosystem continuously improves based on learnings from all projects. By incorporating new teachings:
+- You benefit from patterns discovered in other projects
+- You avoid repeating mistakes already solved elsewhere
+- Your work stays aligned with ecosystem best practices
+- The user gets consistent quality across all their projects
 
 ---
 

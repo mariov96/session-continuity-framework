@@ -1,15 +1,65 @@
 {
-  "_scf_metadata": {
+  "wheelwright": {
     "version": "2.2.0",
     "structure_version": "v2",
     "description": "SCF Framework - Core code and spoke templates for AI context persistence",
     "framework_path": "~/projects/session-continuity-framework",
-    "hub_path": "/home/mario/scf-hub",
+    "hub_path": "/home/mario/wheelwright-hub",
     "_paths_note": "This IS the framework. hub_path points to the developer's personal hub.",
     "github_repo": "mariov96/session-continuity-framework",
-    "last_sync_date": "2025-12-22T00:00:00Z",
-    "hub_kb_version": "2025-12-22T00:00:00Z",
-    "spoke_kb_version": "2025-12-22T00:00:00Z"
+    "last_sync_date": "2025-12-23T07:10:34.450362+00:00",
+    "hub_kb_version": "2025-11-30T00:00:00Z",
+    "spoke_kb_version": "2025-11-30T00:00:00Z",
+    "sync_method": "teach.py --update",
+    "hub_reference": {
+      "current_hash": "cacf6a1e7f05f2b2b1a2655c709d4d48d53a1a1d",
+      "current_hash_short": "cacf6a1",
+      "current_branch": "main",
+      "github_repo": "mariov96/session-continuity-framework",
+      "github_links": {
+        "commit_link": "https://github.com/wheelwright-ai/framework/commit/cacf6a1e7f05f2b2b1a2655c709d4d48d53a1a1d",
+        "repo_link": "https://github.com/wheelwright-ai/framework"
+      },
+      "last_commit": {
+        "date": "2025-12-22 23:09:10 -0800",
+        "message": "test: Add comprehensive hub menu tests and fix existing tests",
+        "author": "mariov96"
+      },
+      "captured_at": "2025-12-23T07:10:34.450348+00:00"
+    },
+    "file_metadata": {
+      "SCF_README.md": {
+        "file_path": ".WAI/WAI-Guide.md",
+        "last_commit": {
+          "hash": "e4c832422ee1c73338952fed5ed6e4f17ce98283",
+          "hash_short": "e4c8324",
+          "date": "2025-12-22 20:08:54 -0800",
+          "message": "feat: Add bootstrap instructions to all SCF components",
+          "author": "mariov96",
+          "days_ago": 0
+        },
+        "staleness_score": 0.0
+      }
+    },
+    "development_health": {
+      "days_since_sync": 0,
+      "sync_frequency": "regular",
+      "drift_score": 0.0,
+      "last_teach_run": "2025-12-23T07:10:34.461150+00:00"
+    },
+    "sync_history": [
+      {
+        "date": "2025-12-23T07:10:34.461157+00:00",
+        "method": "teach.py --update",
+        "hub_hash": "cacf6a1e7f05f2b2b1a2655c709d4d48d53a1a1d",
+        "changes_applied": 1,
+        "files_touched": [
+          "WAI-Guide.md",
+          "WAI-State.json"
+        ]
+      }
+    ],
+    "last_consolidated": "2025-12-24T01:24:08.300440+00:00"
   },
   "_project_foundation": {
     "completed": true,
@@ -17,7 +67,7 @@
     "completed_with": "Claude Opus 4.5",
     "identity": {
       "type": "framework",
-      "name": "Session Continuity Framework (SCF)",
+      "name": "Wheelwright Framework (SCF)",
       "one_liner": "AI-agnostic context persistence for any knowledge work",
       "success_looks_like": "Any AI assistant can pick up any project with full context, and learnings flow across projects automatically"
     },
@@ -27,7 +77,7 @@
         "Spoke templates and schemas",
         "Hub creation tooling",
         "Documentation for SCF usage",
-        "AI instruction generation (SCF_README.md)",
+        "AI instruction generation (WAI-Guide.md)",
         "Cross-project learning protocols"
       ],
       "out_of_scope": [
@@ -82,11 +132,11 @@
     "session_count": 4
   },
   "project": {
-    "name": "Session Continuity Framework",
+    "name": "Wheelwright Framework",
     "version": "2.2.0",
     "type": "framework",
     "description": "AI-agnostic context persistence framework for any knowledge work",
-    "repository": "https://github.com/mariov96/session-continuity-framework",
+    "repository": "https://github.com/wheelwright-ai/framework",
     "created": "2024-11-01T00:00:00Z",
     "last_updated": "2025-12-22T00:00:00Z"
   },
@@ -97,10 +147,10 @@
       "Markdown"
     ],
     "cli": [
-      "./scf unified CLI"
+      "./WAI unified CLI"
     ],
     "structure": [
-      ".scf/",
+      ".WAI/",
       "templates/spoke/",
       "docs/"
     ]
@@ -131,7 +181,7 @@
       "impact": 9
     },
     {
-      "name": "SCF_README.md Generation",
+      "name": "WAI-Guide.md Generation",
       "status": "active",
       "description": "AI instructions generated for each spoke project",
       "impact": 9
@@ -195,14 +245,14 @@
   "next_steps": [
     "Create templates/spoke/ with foundation-ready templates",
     "Update scf CLI with 'hub create' command for guided hub setup",
-    "Move .scf-registry/ contents to user's hub location",
+    "Move .WAI-registry/ contents to user's hub location",
     "Move extensions to separate repos (scf-vscode-extension, scf-browser-extension)",
-    "Add drift detection logic to SCF_README.md template",
+    "Add drift detection logic to WAI-Guide.md template",
     "Implement incomplete foundation detection in teach.py",
     "Create non-coding project templates (research, writing, design)"
   ],
   "ai_rules": {
-    "context_loading": "Read .scf/SCF_README.md first, then BUILDSTATE.json and BUILDSTATE.md",
+    "context_loading": "Read .WAI/WAI-Guide.md first, then WAI-State.json and WAI-State.md",
     "session_state": "Update _session_state when making significant changes",
     "foundation_enforcement": {
       "on_incomplete": "Guide user through foundation questions before work",

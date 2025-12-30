@@ -117,6 +117,16 @@ class TestParseSelection(unittest.TestCase):
         result = self.menu._parse_selection("abc", 10)
         self.assertEqual(result, [])
 
+    def test_parse_cancel_c(self):
+        """Test parsing 'c' returns None for cancel"""
+        result = self.menu._parse_selection("c", 10)
+        self.assertIsNone(result)
+
+    def test_parse_cancel_keyword(self):
+        """Test parsing 'cancel' returns None"""
+        result = self.menu._parse_selection("cancel", 10)
+        self.assertIsNone(result)
+
 
 class TestFormatSize(unittest.TestCase):
     """Test size formatting functionality"""
@@ -420,6 +430,245 @@ class TestVerboseListing(unittest.TestCase):
         # Check some expected content was printed
         call_str = ' '.join(calls)
         self.assertIn('test-project', call_str)
+
+
+class TestDisplayProjectsByGroup(unittest.TestCase):
+    """Test project display by group functionality"""
+
+    def setUp(self):
+        """Set up test environment"""
+        self.temp_dir = tempfile.mkdtemp()
+        self.hub_path = Path(self.temp_dir) / "test-hub"
+        self.hub_path.mkdir(parents=True)
+        self.framework_path = Path(__file__).parent.parent
+
+        (self.hub_path / '.scf-registry').mkdir()
+        (self.hub_path / 'hub-profile.json').write_text('{}')
+
+        self.manager = scf_cli.SCFHubManager(self.framework_path)
+        self.menu = scf_cli.SCFHubMenu(self.hub_path, self.manager, self.framework_path)
+
+    def tearDown(self):
+        """Clean up test environment"""
+        shutil.rmtree(self.temp_dir)
+
+    @patch('builtins.print')
+    def test_display_returns_project_map(self, mock_print):
+        """Test that display returns correct project map"""
+        projects = [
+            {'name': 'proj1', 'scf_enabled': True, 'group': 'work'},
+            {'name': 'proj2', 'scf_enabled': False, 'group': None},
+        ]
+        registry = {'groups': {'work': {'description': 'Work projects'}}, 'projects': projects}
+
+        result = self.menu._display_projects_by_group(projects, registry)
+
+        # Should return a map with numbered entries
+        self.assertEqual(len(result), 2)
+        self.assertIn(1, result)
+        self.assertIn(2, result)
+
+    @patch('builtins.print')
+    def test_display_grouped_first(self, mock_print):
+        """Test that grouped projects are displayed first"""
+        projects = [
+            {'name': 'ungrouped1', 'scf_enabled': True, 'group': None},
+            {'name': 'grouped1', 'scf_enabled': True, 'group': 'work'},
+        ]
+        registry = {'groups': {'work': {}}, 'projects': projects}
+
+        result = self.menu._display_projects_by_group(projects, registry)
+
+        # Grouped project should be first in map
+        self.assertEqual(result[1]['name'], 'grouped1')
+        self.assertEqual(result[2]['name'], 'ungrouped1')
+
+
+class TestGitInfo(unittest.TestCase):
+    """Test git info extraction"""
+
+    def setUp(self):
+        """Set up test environment"""
+        self.temp_dir = tempfile.mkdtemp()
+        self.hub_path = Path(self.temp_dir) / "test-hub"
+        self.hub_path.mkdir(parents=True)
+        self.framework_path = Path(__file__).parent.parent
+
+        (self.hub_path / '.scf-registry').mkdir()
+        (self.hub_path / 'hub-profile.json').write_text('{}')
+
+        self.manager = scf_cli.SCFHubManager(self.framework_path)
+        self.menu = scf_cli.SCFHubMenu(self.hub_path, self.manager, self.framework_path)
+
+    def tearDown(self):
+        """Clean up test environment"""
+        shutil.rmtree(self.temp_dir)
+
+    def test_git_info_no_repo(self):
+        """Test git info for non-git directory"""
+        # Project without .git dir should return git info with has_repo=True
+        # but no remote/branch info since git commands will fail
+        test_proj = self.hub_path / 'test-proj'
+        test_proj.mkdir()
+
+        result = self.menu._get_git_info(test_proj)
+
+        self.assertTrue(result['has_repo'])  # Structure created
+        self.assertIsNone(result['remote_url'])
+        self.assertFalse(result['has_remote'])
+
+
+class TestConsolidateSCFFiles(unittest.TestCase):
+    """Test SCF file consolidation functionality"""
+
+    def setUp(self):
+        """Set up test environment"""
+        self.temp_dir = tempfile.mkdtemp()
+        self.hub_path = Path(self.temp_dir) / "test-hub"
+        self.hub_path.mkdir(parents=True)
+        self.framework_path = Path(__file__).parent.parent
+
+        (self.hub_path / '.scf-registry').mkdir()
+        (self.hub_path / 'hub-profile.json').write_text('{}')
+
+        self.manager = scf_cli.SCFHubManager(self.framework_path)
+        self.menu = scf_cli.SCFHubMenu(self.hub_path, self.manager, self.framework_path)
+
+        # Create test project
+        self.test_proj = Path(self.temp_dir) / 'test-project'
+        self.test_proj.mkdir()
+
+    def tearDown(self):
+        """Clean up test environment"""
+        shutil.rmtree(self.temp_dir)
+
+    def test_consolidate_creates_scf_dir(self):
+        """Test that consolidation creates .scf directory if missing"""
+        result = self.menu._consolidate_scf_files(self.test_proj)
+
+        self.assertTrue((self.test_proj / '.scf').exists())
+        self.assertEqual(result['errors'], [])
+
+    def test_consolidate_migrates_legacy_buildstate(self):
+        """Test migration of legacy buildstate from root to .scf/"""
+        # Create legacy buildstate in root
+        legacy_data = {'project': {'name': 'test'}, 'decisions': []}
+        (self.test_proj / 'buildstate.json').write_text(json.dumps(legacy_data))
+
+        result = self.menu._consolidate_scf_files(self.test_proj)
+
+        # Should migrate to canonical location
+        self.assertTrue((self.test_proj / '.scf' / 'BUILDSTATE.json').exists())
+        self.assertFalse((self.test_proj / 'buildstate.json').exists())
+        self.assertIn('buildstate.json', result['migrated'])
+
+    def test_consolidate_cleans_corrupt_jsonl_lines(self):
+        """Test that corrupt JSONL lines are cleaned from signals file"""
+        scf_dir = self.test_proj / '.scf'
+        scf_dir.mkdir()
+
+        # Create signals file with mix of valid and corrupt lines
+        signals_content = '''{"timestamp": "2025-01-01", "offers": true}
+corrupt line that is not JSON
+{"timestamp": "2025-01-02", "offers": false}
+another corrupt line
+{"timestamp": "2025-01-03", "offers": true}
+'''
+        (scf_dir / 'spoke-signals.jsonl').write_text(signals_content)
+
+        result = self.menu._consolidate_scf_files(self.test_proj)
+
+        # Should report 2 corrupt lines cleaned
+        self.assertEqual(result['corrupt_lines_cleaned'], 2)
+
+        # Read back the file - should only have valid lines
+        with open(scf_dir / 'spoke-signals.jsonl') as f:
+            lines = [l.strip() for l in f if l.strip()]
+
+        self.assertEqual(len(lines), 3)  # Only valid lines remain
+        # Verify all lines are valid JSON
+        for line in lines:
+            data = json.loads(line)  # Should not raise
+            self.assertIn('timestamp', data)
+
+    def test_consolidate_preserves_valid_signals(self):
+        """Test that valid signals are preserved during consolidation"""
+        scf_dir = self.test_proj / '.scf'
+        scf_dir.mkdir()
+
+        # Create signals file with only valid lines
+        signals = [
+            {"timestamp": "2025-01-01", "type": "learning"},
+            {"timestamp": "2025-01-02", "type": "decision"},
+        ]
+        with open(scf_dir / 'spoke-signals.jsonl', 'w') as f:
+            for s in signals:
+                f.write(json.dumps(s) + '\n')
+
+        result = self.menu._consolidate_scf_files(self.test_proj)
+
+        # No corrupt lines
+        self.assertEqual(result['corrupt_lines_cleaned'], 0)
+
+        # Signals should be unchanged (no rewrite needed since no corruption)
+        # Actually, it won't rewrite since canonical_had_corrupt is False
+        with open(scf_dir / 'spoke-signals.jsonl') as f:
+            lines = [json.loads(l.strip()) for l in f if l.strip()]
+
+        self.assertEqual(len(lines), 2)
+
+    def test_consolidate_merges_legacy_signals(self):
+        """Test that legacy signals are merged into canonical location"""
+        scf_dir = self.test_proj / '.scf'
+        scf_dir.mkdir()
+
+        # Create canonical signals
+        canonical = [{"timestamp": "2025-01-01", "type": "a"}]
+        with open(scf_dir / 'spoke-signals.jsonl', 'w') as f:
+            f.write(json.dumps(canonical[0]) + '\n')
+
+        # Create legacy signals in root
+        legacy = [{"timestamp": "2025-01-02", "type": "b"}]
+        with open(self.test_proj / 'spoke-signals.jsonl', 'w') as f:
+            f.write(json.dumps(legacy[0]) + '\n')
+
+        result = self.menu._consolidate_scf_files(self.test_proj)
+
+        # Legacy should be merged and removed
+        self.assertFalse((self.test_proj / 'spoke-signals.jsonl').exists())
+        self.assertIn('spoke-signals.jsonl', result['cleaned'])
+
+        # Canonical should have both signals
+        with open(scf_dir / 'spoke-signals.jsonl') as f:
+            lines = [json.loads(l.strip()) for l in f if l.strip()]
+
+        self.assertEqual(len(lines), 2)
+        timestamps = {l['timestamp'] for l in lines}
+        self.assertIn('2025-01-01', timestamps)
+        self.assertIn('2025-01-02', timestamps)
+
+    def test_consolidate_handles_non_dict_buildstate(self):
+        """Test that buildstate files containing non-dict JSON are handled gracefully"""
+        # Create a buildstate that contains just a string instead of a dict
+        (self.test_proj / 'buildstate.json').write_text('"just a string"')
+
+        result = self.menu._consolidate_scf_files(self.test_proj)
+
+        # Should report error but not crash
+        self.assertTrue(any('expected dict, got str' in e for e in result['errors']))
+
+        # File should NOT be removed since we couldn't process it
+        self.assertTrue((self.test_proj / 'buildstate.json').exists())
+
+    def test_consolidate_handles_list_buildstate(self):
+        """Test that buildstate files containing a list are handled gracefully"""
+        # Create a buildstate that contains a list instead of a dict
+        (self.test_proj / 'buildstate.json').write_text('[1, 2, 3]')
+
+        result = self.menu._consolidate_scf_files(self.test_proj)
+
+        # Should report error but not crash
+        self.assertTrue(any('expected dict, got list' in e for e in result['errors']))
 
 
 if __name__ == '__main__':

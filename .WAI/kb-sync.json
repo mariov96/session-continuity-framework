@@ -1,0 +1,25 @@
+{
+  "_notice": "Enhanced tracking data has been consolidated into BUILDSTATE.json _scf_metadata section",
+  "_migration_info": {
+    "consolidated_to": "BUILDSTATE.json._scf_metadata",
+    "migration_date": "2025-12-15T21:52:44.645496+00:00",
+    "reason": "Single source of truth architecture - eliminated file sprawl"
+  },
+  "hub_kb_version": "2025-12-24T01:10:59.618728+00:00",
+  "spoke_kb_version": "2025-11-30T00:00:00Z",
+  "last_sync_date": "2025-12-24T01:10:59.618721+00:00",
+  "sync_method": "scf sync (unified CLI)",
+  "learnings_received": [
+    "Security hardening implementation",
+    "Progressive UI disclosure system",
+    "Unified CLI interface (./scf command)",
+    "Hub/Spoke role-based onboarding"
+  ],
+  "_instructions": {
+    "for_llms": "DEPRECATED: Enhanced tracking now in BUILDSTATE.json._scf_metadata. Use 'scf sync --status' for health checks. Run 'scf sync' to update instead of teach.py --update",
+    "updating": "This file will be deprecated in favor of BUILDSTATE.json._scf_metadata consolidation."
+  },
+  "hub_path": "/home/mario/scf-hub",
+  "framework_path": "/home/mario/projects/session-continuity-framework",
+  "hub_version": "f55d22778232"
+}
